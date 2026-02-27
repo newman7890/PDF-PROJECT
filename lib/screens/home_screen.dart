@@ -42,7 +42,7 @@ class _HomeScreenState extends State<HomeScreen> {
             }
           },
           onError: (err) {
-            print("getIntentDataStream error: $err");
+            debugPrint("getIntentDataStream error: $err");
           },
         );
 
