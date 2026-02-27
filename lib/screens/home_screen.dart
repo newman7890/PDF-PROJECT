@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as path;
 import 'package:share_plus/share_plus.dart';
+import 'package:receive_sharing_intent/receive_sharing_intent.dart';
+import 'dart:async';
 
 import '../services/storage_service.dart';
 import '../services/pdf_service.dart';
@@ -23,11 +25,56 @@ class _HomeScreenState extends State<HomeScreen> {
   List<ScannedDocument> _documents = [];
   bool _isLoading = true;
   bool _isImporting = false;
+  late StreamSubscription _intentDataStreamSubscription;
 
   @override
   void initState() {
     super.initState();
     _loadDocuments();
+
+    // For sharing or opening pdf files while app is in memory
+    _intentDataStreamSubscription = ReceiveSharingIntent.instance
+        .getMediaStream()
+        .listen(
+          (List<SharedMediaFile> value) {
+            if (value.isNotEmpty) {
+              _handleExternalPdf(value.first.path);
+            }
+          },
+          onError: (err) {
+            print("getIntentDataStream error: $err");
+          },
+        );
+
+    // For sharing or opening pdf files when app is closed
+    ReceiveSharingIntent.instance.getInitialMedia().then((
+      List<SharedMediaFile> value,
+    ) {
+      if (value.isNotEmpty) {
+        _handleExternalPdf(value.first.path);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _intentDataStreamSubscription.cancel();
+    super.dispose();
+  }
+
+  void _handleExternalPdf(String filePath) {
+    if (!filePath.toLowerCase().endsWith('.pdf')) return;
+
+    // Create a temporary ScannedDocument for the external file
+    final doc = ScannedDocument(
+      id: "external_${DateTime.now().millisecondsSinceEpoch}",
+      title: path.basename(filePath),
+      filePath: filePath,
+      dateCreated: DateTime.now(),
+      isPdf: true,
+    );
+
+    _openDocument(doc);
   }
 
   Future<void> _loadDocuments() async {
