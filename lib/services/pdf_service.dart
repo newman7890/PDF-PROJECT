@@ -118,9 +118,12 @@ class PDFService {
     final List<String> pageResults = await Future.wait(pageTasks);
 
     // 3. Assemble results into Quill Delta
-    for (var text in pageResults) {
+    for (int i = 0; i < pageResults.length; i++) {
+      final text = pageResults[i];
       if (text.isNotEmpty) {
+        delta.insert("--- Page ${i + 1} ---\n", {"bold": true});
         delta.insert(text);
+        delta.insert("\n");
       }
     }
 
@@ -182,12 +185,19 @@ class PDFService {
         inputBytes: File(pdfPath).readAsBytesSync(),
       );
 
-      final String extractedText = PdfTextExtractor(document).extractText();
+      for (int i = 0; i < document.pages.count; i++) {
+        final String pageText = PdfTextExtractor(
+          document,
+        ).extractText(startPageIndex: i, endPageIndex: i);
+        if (pageText.isNotEmpty) {
+          delta.insert("--- Page ${i + 1} ---\n", {"bold": true});
+          delta.insert(pageText);
+          delta.insert("\n");
+        }
+      }
       document.dispose();
 
-      if (extractedText.isNotEmpty) {
-        delta.insert(extractedText);
-      } else {
+      if (delta.isEmpty) {
         delta.insert("No text found in this document layer.\n");
       }
     } catch (e) {
@@ -201,20 +211,30 @@ class PDFService {
     final PdfDocument document = PdfDocument();
     final PdfPage page = document.pages.add();
 
-    // Basic text drawing from delta
-    // In a real app, this would iterate over delta attributes (bold, size, etc.)
+    // Basic plain text extraction for demo
+    // Syncfusion PdfTextElement handles automatic pagination
     final String plainText = delta.toList().map((e) => e.data).join();
 
-    page.graphics.drawString(
-      plainText,
-      PdfStandardFont(PdfFontFamily.helvetica, 12),
+    final PdfTextElement textElement = PdfTextElement(
+      text: plainText,
+      font: PdfStandardFont(PdfFontFamily.helvetica, 12),
       brush: PdfBrushes.black,
+    );
+
+    final PdfLayoutFormat layoutFormat = PdfLayoutFormat(
+      layoutType: PdfLayoutType.paginate,
+      breakType: PdfLayoutBreakType.fitPage,
+    );
+
+    textElement.draw(
+      page: page,
       bounds: Rect.fromLTWH(
         40,
         40,
         page.getClientSize().width - 80,
         page.getClientSize().height - 80,
       ),
+      format: layoutFormat,
     );
 
     final List<int> bytes = await document.save();
