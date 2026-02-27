@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'services/storage_service.dart';
 import 'services/pdf_service.dart';
 import 'services/permission_service.dart';
+import 'services/image_processing_service.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_quill/flutter_quill.dart';
 import 'screens/home_screen.dart';
@@ -16,6 +17,9 @@ void main() async {
         Provider<StorageService>(create: (_) => StorageService()),
         Provider<PDFService>(create: (_) => PDFService()),
         Provider<PermissionService>(create: (_) => PermissionService()),
+        Provider<ImageProcessingService>(
+          create: (_) => ImageProcessingService(),
+        ),
       ],
       child: const PDFScannerApp(),
     ),

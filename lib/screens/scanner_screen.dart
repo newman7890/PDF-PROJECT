@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import '../services/pdf_service.dart';
 import '../services/storage_service.dart';
 import '../services/permission_service.dart';
+import '../services/image_processing_service.dart';
 import '../models/scanned_document.dart';
 import 'editor_screen.dart';
 
@@ -54,34 +55,35 @@ class _ScannerScreenState extends State<ScannerScreen> {
     setState(() => _isScanning = true);
 
     try {
-      // Configuration for the scanner.
-      // Note: Options might vary slightly between package versions.
+      // We FORCE jpeg mode and high-res scanning for our manual whitening filter
       final options = DocumentScannerOptions(
-        documentFormat: DocumentFormat.pdf,
+        documentFormat: DocumentFormat.jpeg,
         mode: ScannerMode.full,
         pageLimit: 20,
-        // Removed isGalleryImportAllowed if it causes lints in 0.1.0
       );
 
       _documentScanner = DocumentScanner(options: options);
 
-      // This opens the native Android/iOS document scanner UI.
       final result = await _documentScanner!.scanDocument();
 
-      if (result.pdf != null) {
-        // Result contains a PDF file URI string.
-        final pdfPath = result.pdf!.uri;
-        await _saveScannedPdf(pdfPath);
-      } else if (result.images.isNotEmpty) {
-        // Result contains image paths, which we'll convert to PDF.
+      if (result.images.isNotEmpty) {
+        // All images MUST go through the whitening filter
         await _convertImagesToPdf(result.images);
       } else {
         // User exited without scanning.
         if (mounted) Navigator.pop(context);
       }
     } catch (e) {
+      final errorStr = e.toString().toLowerCase();
+      if (errorStr.contains('cancel') || errorStr.contains('cancelled')) {
+        // User just backed out, not a real error. Silent exit.
+        if (mounted) Navigator.pop(context);
+        return;
+      }
+
       debugPrint("Scan error: $e");
       if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Scanning failed: $e')));
@@ -92,59 +94,57 @@ class _ScannerScreenState extends State<ScannerScreen> {
     }
   }
 
-  /// Saves a direct PDF output from the scanner into our app storage.
-  Future<void> _saveScannedPdf(String tempPath) async {
-    final storage = context.read<StorageService>();
-    final timestamp = DateTime.now().millisecondsSinceEpoch;
-    final finalPath = await storage.getNewFilePath("Scan_$timestamp");
-
-    // Copy the temporary file to our persistent storage.
-    final tempFile = File(tempPath);
-    await tempFile.copy(finalPath);
-
-    final doc = ScannedDocument(
-      id: DateTime.now().toIso8601String(),
-      title: "New Scan ${DateTime.now().hour}:${DateTime.now().minute}",
-      filePath: finalPath,
-      dateCreated: DateTime.now(),
-      isPdf: true,
-    );
-
-    await storage.saveDocument(doc);
-
-    if (mounted) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => EditorScreen(document: doc)),
-      );
-    }
-  }
-
   /// Takes separate images from the scanner and merges them into one PDF.
+  /// Every page is passed through our "Maximum Bleach" whitening filter.
   Future<void> _convertImagesToPdf(List<String> images) async {
     final pdfService = context.read<PDFService>();
     final storage = context.read<StorageService>();
+    final imageProcessor = context.read<ImageProcessingService>();
 
-    final timestamp = DateTime.now().millisecondsSinceEpoch;
-    final outputPath = await storage.getNewFilePath("Scan_$timestamp");
+    setState(() {
+      _isScanning = true;
+    });
 
-    await pdfService.imagesToPdf(images, outputPath);
+    try {
+      final List<String> enhancedImagePaths = [];
 
-    final doc = ScannedDocument(
-      id: DateTime.now().toIso8601String(),
-      title: "New Scan ${DateTime.now().hour}:${DateTime.now().minute}",
-      filePath: outputPath,
-      dateCreated: DateTime.now(),
-      isPdf: true,
-    );
+      for (int i = 0; i < images.length; i++) {
+        final File enhancedFile = await imageProcessor.autoEnhance(
+          File(images[i]),
+        );
+        enhancedImagePaths.add(enhancedFile.path);
+      }
 
-    await storage.saveDocument(doc);
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final outputPath = await storage.getNewFilePath("Scan_$timestamp");
 
-    if (mounted) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => EditorScreen(document: doc)),
+      await pdfService.imagesToPdf(enhancedImagePaths, outputPath);
+
+      final doc = ScannedDocument(
+        id: DateTime.now().toIso8601String(),
+        title: "New Scan ${DateTime.now().hour}:${DateTime.now().minute}",
+        filePath: outputPath,
+        dateCreated: DateTime.now(),
+        isPdf: true,
       );
+
+      await storage.saveDocument(doc);
+
+      if (mounted) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => EditorScreen(document: doc)),
+        );
+      }
+    } catch (e) {
+      debugPrint("Conversion error: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Failed to process scan: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _isScanning = false);
     }
   }
 
@@ -165,7 +165,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
                 children: [
                   CircularProgressIndicator(),
                   SizedBox(height: 16),
-                  Text('Opening Scanner...'),
+                  Text('Processing Clear Scan...'),
                 ],
               )
             : ElevatedButton.icon(

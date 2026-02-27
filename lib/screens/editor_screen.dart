@@ -30,7 +30,10 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 
   void _runOCR() async {
-    setState(() => _isProcessing = true);
+    setState(() {
+      _isProcessing = true;
+      _processingMessage = "Preparing document...";
+    });
     final pdfService = context.read<PDFService>();
 
     try {
@@ -63,39 +66,7 @@ class _EditorScreenState extends State<EditorScreen> {
     }
   }
 
-  void _runDirectEdit() async {
-    setState(() => _isProcessing = true);
-    final pdfService = context.read<PDFService>();
-
-    try {
-      final delta = await pdfService.extractTextDirectlyToDelta(_filePath);
-
-      setState(() {
-        _quillController = quill.QuillController(
-          document: quill.Document.fromDelta(delta),
-          selection: const TextSelection.collapsed(offset: 0),
-        );
-        _quillController!.readOnly = false;
-        _isEditing = true;
-      });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Text layer extracted. Document is now editable.'),
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Direct extraction failed: $e')));
-      }
-    } finally {
-      setState(() => _isProcessing = false);
-    }
-  }
+  String _processingMessage = "Processing...";
 
   void _saveChanges() async {
     if (_quillController == null) return;
@@ -269,17 +240,17 @@ class _EditorScreenState extends State<EditorScreen> {
               ],
             ),
           if (_isProcessing)
-            const Center(
+            Center(
               child: Card(
                 elevation: 4,
                 child: Padding(
-                  padding: EdgeInsets.all(16.0),
+                  padding: const EdgeInsets.all(16.0),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      CircularProgressIndicator(),
-                      SizedBox(height: 16),
-                      Text('Processing...'),
+                      const CircularProgressIndicator(),
+                      const SizedBox(height: 16),
+                      Text(_processingMessage),
                     ],
                   ),
                 ),
@@ -298,11 +269,6 @@ class _EditorScreenState extends State<EditorScreen> {
                 icon: Icons.text_snippet,
                 label: 'OCR Edit',
                 onPressed: _runOCR,
-              ),
-              _buildActionButton(
-                icon: Icons.edit_document,
-                label: 'Direct Edit',
-                onPressed: _runDirectEdit,
               ),
             ] else
               _buildActionButton(

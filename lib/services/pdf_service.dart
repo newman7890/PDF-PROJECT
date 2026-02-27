@@ -20,8 +20,11 @@ class PDFService {
       // Add a page to the document.
       final PdfPage page = document.pages.add();
 
-      final Uint8List imageData = File(imagePath).readAsBytesSync();
+      final Uint8List imageData = await File(imagePath).readAsBytes();
       final PdfBitmap bitmap = PdfBitmap(imageData);
+
+      // Disable compression for maximum clarity if needed,
+      // but Syncfusion handles this well by default.
 
       // Draw the image onto the PDF page.
       page.graphics.drawImage(
@@ -109,21 +112,32 @@ class PDFService {
     final document = await pdfx.PdfDocument.openFile(pdfPath);
     final int pageCount = document.pagesCount;
 
-    // 2. Process pages in parallel
-    final List<Future<String>> pageTasks = [];
-    for (int i = 0; i < pageCount; i++) {
-      pageTasks.add(_processSinglePage(document, i));
-    }
+    // 2. Process pages in batches (Throttled for performance/memory)
+    const int batchSize = 2;
+    final List<String> pageResults = List.filled(pageCount, "");
 
-    final List<String> pageResults = await Future.wait(pageTasks);
+    for (int i = 0; i < pageCount; i += batchSize) {
+      final int end = (i + batchSize < pageCount) ? i + batchSize : pageCount;
+      final List<Future<String>> batchTasks = [];
+      for (int j = i; j < end; j++) {
+        batchTasks.add(_processSinglePage(document, j));
+      }
+      final results = await Future.wait(batchTasks);
+      for (int j = 0; j < results.length; j++) {
+        pageResults[i + j] = results[j];
+      }
+    }
 
     // 3. Assemble results into Quill Delta
     for (int i = 0; i < pageResults.length; i++) {
       final text = pageResults[i];
+      // Always insert page marker so user sees the page exists
+      delta.insert("--- Page ${i + 1} ---\n", {"bold": true});
       if (text.isNotEmpty) {
-        delta.insert("--- Page ${i + 1} ---\n", {"bold": true});
         delta.insert(text);
         delta.insert("\n");
+      } else {
+        delta.insert("(No text detected on this page)\n");
       }
     }
 
@@ -141,8 +155,8 @@ class PDFService {
     try {
       page = await document.getPage(pageIndex + 1);
       final pageImage = await page.render(
-        width: page.width * 1.5, // Optimized resolution for speed
-        height: page.height * 1.5,
+        width: page.width * 1.2, // Further reduced for stability/speed
+        height: page.height * 1.2,
         format: pdfx.PdfPageImageFormat.jpeg,
       );
 
@@ -169,41 +183,13 @@ class PDFService {
       }
     } catch (e) {
       debugPrint("Error processing page $pageIndex: $e");
+      extractedText = "[Error on page ${pageIndex + 1}: $e]";
     } finally {
       if (page != null) {
         await page.close();
       }
     }
     return extractedText;
-  }
-
-  /// Extracts text directly from a digital PDF using Syncfusion's text extractor.
-  Future<Delta> extractTextDirectlyToDelta(String pdfPath) async {
-    final delta = Delta();
-    try {
-      final PdfDocument document = PdfDocument(
-        inputBytes: File(pdfPath).readAsBytesSync(),
-      );
-
-      for (int i = 0; i < document.pages.count; i++) {
-        final String pageText = PdfTextExtractor(
-          document,
-        ).extractText(startPageIndex: i, endPageIndex: i);
-        if (pageText.isNotEmpty) {
-          delta.insert("--- Page ${i + 1} ---\n", {"bold": true});
-          delta.insert(pageText);
-          delta.insert("\n");
-        }
-      }
-      document.dispose();
-
-      if (delta.isEmpty) {
-        delta.insert("No text found in this document layer.\n");
-      }
-    } catch (e) {
-      delta.insert("Error extracting text: $e\n");
-    }
-    return delta;
   }
 
   /// Generates a PDF from Quill Delta.
