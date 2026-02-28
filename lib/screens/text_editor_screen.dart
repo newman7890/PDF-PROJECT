@@ -5,6 +5,8 @@ import '../models/scanned_document.dart';
 import '../services/pdf_service.dart';
 import '../services/storage_service.dart';
 import '../services/ocr_service.dart';
+import '../services/rich_text_service.dart';
+import '../widgets/rich_text_toolbar.dart';
 
 /// A screen that extracts the text from a PDF and lets the user edit it,
 /// then saves the result as a new PDF.
@@ -18,7 +20,7 @@ class TextEditorScreen extends StatefulWidget {
 }
 
 class _TextEditorScreenState extends State<TextEditorScreen> {
-  final TextEditingController _controller = TextEditingController();
+  final StyledTextController _controller = StyledTextController();
   bool _isLoading = true;
   bool _isSaving = false;
   String _statusMessage = 'Extracting text from PDF...';
@@ -65,6 +67,37 @@ class _TextEditorScreenState extends State<TextEditorScreen> {
         _isLoading = false;
         _controller.text = '(Error extracting text: $e)';
       });
+    }
+  }
+
+  void _insertMarkdown(String tag) {
+    final selection = _controller.selection;
+    final text = _controller.text;
+
+    if (selection.isCollapsed) {
+      // Just insert at cursor
+      final newText = text.replaceRange(selection.start, selection.end, tag);
+      _controller.value = _controller.value.copyWith(
+        text: newText,
+        selection: TextSelection.collapsed(
+          offset: selection.start + tag.length,
+        ),
+      );
+    } else {
+      // Wrap selection
+      final selectedText = text.substring(selection.start, selection.end);
+      final newText = text.replaceRange(
+        selection.start,
+        selection.end,
+        '$tag$selectedText$tag',
+      );
+      _controller.value = _controller.value.copyWith(
+        text: newText,
+        selection: TextSelection(
+          baseOffset: selection.start,
+          extentOffset: selection.end + (tag.length * 2),
+        ),
+      );
     }
   }
 
@@ -132,10 +165,12 @@ class _TextEditorScreenState extends State<TextEditorScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.grey[50],
       appBar: AppBar(
         title: Text(widget.document.title, overflow: TextOverflow.ellipsis),
         backgroundColor: Colors.indigo,
         foregroundColor: Colors.white,
+        elevation: 0,
         actions: [
           if (!_isLoading)
             IconButton(
@@ -156,10 +191,16 @@ class _TextEditorScreenState extends State<TextEditorScreen> {
                       ),
                     ),
                   )
-                : IconButton(
-                    icon: const Icon(Icons.save_alt),
-                    tooltip: 'Save as new PDF',
+                : TextButton.icon(
                     onPressed: _saveAsPdf,
+                    icon: const Icon(Icons.save_alt, color: Colors.white),
+                    label: const Text(
+                      'SAVE',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
         ],
       ),
@@ -168,104 +209,82 @@ class _TextEditorScreenState extends State<TextEditorScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const CircularProgressIndicator(),
+                  TweenAnimationBuilder<double>(
+                    tween: Tween(begin: 0.0, end: 1.0),
+                    duration: const Duration(seconds: 2),
+                    builder: (context, value, _) =>
+                        CircularProgressIndicator(value: value),
+                  ),
                   const SizedBox(height: 16),
                   Text(
                     _statusMessage,
-                    style: TextStyle(color: Colors.grey[600]),
+                    style: TextStyle(
+                      color: Colors.grey[600],
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ],
               ),
             )
           : Column(
               children: [
-                // Info banner
-                Container(
-                  width: double.infinity,
-                  color: Colors.indigo.shade50,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 10,
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.info_outline,
-                        size: 16,
-                        color: Colors.indigo.shade400,
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Edit the text below, then tap 💾 to save as a new PDF.',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.indigo.shade700,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                // Premium Rich Text Toolbar
+                RichTextToolbar(
+                  onBoldToggle: () => _insertMarkdown('**'),
+                  onItalicToggle: () => _insertMarkdown('*'),
+                  onFontSizeChange: (size) => _insertMarkdown('# '),
+                  onColorChange: (color) {},
+                  onUndo: () {},
+                  onRedo: () {},
                 ),
-                // Text editor
+
+                // Text editor container
                 Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
+                  child: Container(
+                    margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(15),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.03),
+                          blurRadius: 10,
+                          spreadRadius: 2,
+                        ),
+                      ],
+                    ),
+                    clipBehavior: Clip.antiAlias,
                     child: TextField(
                       controller: _controller,
                       maxLines: null,
                       expands: true,
                       textAlignVertical: TextAlignVertical.top,
                       style: const TextStyle(
-                        fontSize: 15,
+                        fontSize: 16,
                         height: 1.6,
-                        fontFamily: 'monospace',
+                        fontFamily: 'Roboto',
+                        color: Colors.black87,
                       ),
                       decoration: InputDecoration(
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: BorderSide(color: Colors.grey.shade300),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          borderSide: const BorderSide(color: Colors.indigo),
-                        ),
-                        hintText: 'Your PDF text will appear here...',
-                        contentPadding: const EdgeInsets.all(12),
+                        border: InputBorder.none,
+                        hintText: 'Start typing or editing your document...',
+                        hintStyle: TextStyle(color: Colors.grey[400]),
+                        contentPadding: const EdgeInsets.all(20),
+                        fillColor: Colors.white,
+                        filled: true,
                       ),
                     ),
                   ),
                 ),
-                // Bottom save button
+
+                // Bottom hint
                 SafeArea(
+                  top: false,
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                    child: SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        onPressed: _isSaving ? null : _saveAsPdf,
-                        icon: _isSaving
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            : const Icon(Icons.save_alt),
-                        label: Text(
-                          _isSaving ? 'Saving...' : 'Save as New PDF',
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.indigo,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                        ),
-                      ),
+                    padding: const EdgeInsets.only(bottom: 8.0),
+                    child: Text(
+                      'Use the toolbar to format. Changes are saved as a new PDF.',
+                      style: TextStyle(fontSize: 11, color: Colors.grey[500]),
                     ),
                   ),
                 ),

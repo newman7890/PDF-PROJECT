@@ -118,7 +118,7 @@ class PDFService {
     }
   }
 
-  /// Creates a new PDF from plain text content.
+  /// Creates a new PDF from plain text content (supporting basic Markdown-like styling).
   Future<File> saveTextAsPdf(
     String text,
     String outputPath, {
@@ -128,13 +128,37 @@ class PDFService {
 
     // Page setup
     const double margin = 40.0;
-    const double lineHeight = 18.0;
-    const double fontSize = 12.0;
-    final PdfFont font = PdfStandardFont(PdfFontFamily.helvetica, fontSize);
+    const double lineHeightNormal = 18.0;
+    const double fontSizeNormal = 12.0;
+    const double fontSizeH1 = 20.0;
+
+    final PdfFont fontNormal = PdfStandardFont(
+      PdfFontFamily.helvetica,
+      fontSizeNormal,
+    );
+    final PdfFont fontBold = PdfStandardFont(
+      PdfFontFamily.helvetica,
+      fontSizeNormal,
+      style: PdfFontStyle.bold,
+    );
+    final PdfFont fontItalic = PdfStandardFont(
+      PdfFontFamily.helvetica,
+      fontSizeNormal,
+      style: PdfFontStyle.italic,
+    );
+    final PdfFont fontH1 = PdfStandardFont(
+      PdfFontFamily.helvetica,
+      fontSizeH1,
+      style: PdfFontStyle.bold,
+    );
+
     final PdfBrush blackBrush = PdfSolidBrush(PdfColor(0, 0, 0));
+    final PdfBrush indigoBrush = PdfSolidBrush(
+      PdfColor(63, 81, 181),
+    ); // Materials Indigo
 
     // Split text into lines
-    final List<String> lines = text.split('\n');
+    final List<String> rawLines = text.split('\n');
 
     PdfPage page = document.pages.add();
     double y = margin;
@@ -142,27 +166,49 @@ class PDFService {
     final double pageHeight = page.getClientSize().height;
     final double usableWidth = pageWidth - margin * 2;
 
-    for (final rawLine in lines) {
+    for (final rawLine in rawLines) {
+      PdfFont currentFont = fontNormal;
+      PdfBrush currentBrush = blackBrush;
+      double currentLineHeight = lineHeightNormal;
+      String lineToDraw = rawLine;
+
+      // 1. Check for Heading (Simple MVP H1)
+      if (rawLine.startsWith('# ')) {
+        currentFont = fontH1;
+        currentBrush = indigoBrush;
+        currentLineHeight = 28.0;
+        lineToDraw = rawLine.substring(2);
+      }
+      // 2. Check for Bold/Italic (Simplified: Whole line level for now)
+      else if (rawLine.startsWith('**') && rawLine.endsWith('**')) {
+        currentFont = fontBold;
+        lineToDraw = rawLine.substring(2, rawLine.length - 2);
+      } else if (rawLine.startsWith('*') && rawLine.endsWith('*')) {
+        currentFont = fontItalic;
+        lineToDraw = rawLine.substring(1, rawLine.length - 1);
+      }
+
       // Word-wrap each line to fit the page width
-      final wrappedLines = _wrapLine(rawLine, font, usableWidth);
+      final wrappedLines = _wrapLine(lineToDraw, currentFont, usableWidth);
 
       for (final wLine in wrappedLines) {
         // Check if we need a new page
-        if (y + lineHeight > pageHeight - margin) {
+        if (y + currentLineHeight > pageHeight - margin) {
           page = document.pages.add();
           y = margin;
         }
 
         page.graphics.drawString(
           wLine,
-          font,
-          brush: blackBrush,
-          bounds: Rect.fromLTWH(margin, y, usableWidth, lineHeight),
+          currentFont,
+          brush: currentBrush,
+          bounds: Rect.fromLTWH(margin, y, usableWidth, currentLineHeight),
         );
-        y += lineHeight;
+        y += currentLineHeight;
       }
-      // Blank line between paragraphs
-      if (rawLine.isEmpty) y += lineHeight * 0.4;
+
+      // Blank line spacing
+      if (rawLine.isEmpty) y += lineHeightNormal * 0.4;
     }
 
     final List<int> bytes = await document.save();
