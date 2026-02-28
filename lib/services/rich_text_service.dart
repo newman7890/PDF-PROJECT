@@ -26,7 +26,7 @@ class RichTextBlock {
     'isItalic': isItalic,
     'isUnderline': isUnderline,
     'fontSize': fontSize,
-    'color': color.value,
+    'color': color.toARGB32(),
     'alignment': alignment.index,
   };
 }

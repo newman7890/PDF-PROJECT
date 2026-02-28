@@ -235,7 +235,7 @@ class _HomeScreenState extends State<HomeScreen> {
         width: 48,
         height: 48,
         decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
+          color: color.withValues(alpha: 0.1),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Icon(icon, color: color),
@@ -436,7 +436,7 @@ class _HomeScreenState extends State<HomeScreen> {
           // Importing overlay
           if (_isImporting)
             Container(
-              color: Colors.black.withOpacity(0.3),
+              color: Colors.black.withValues(alpha: 0.3),
               child: const Center(
                 child: Card(
                   child: Padding(
