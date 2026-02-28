@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 import '../models/scanned_document.dart';
 import '../services/pdf_service.dart';
 import '../services/storage_service.dart';
@@ -172,36 +173,25 @@ class _TextEditorScreenState extends State<TextEditorScreen> {
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.share_outlined),
+            tooltip: 'Share as PDF',
+            onPressed: () {
+              // Share functionality
+              Share.shareXFiles([XFile(widget.document.filePath)]);
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.download_for_offline_outlined),
+            tooltip: 'Download',
+            onPressed: _saveAsPdf, // In this context, save is like download
+          ),
           if (!_isLoading)
             IconButton(
               icon: const Icon(Icons.refresh),
               tooltip: 'Re-extract text',
               onPressed: _extractText,
             ),
-          if (!_isLoading)
-            _isSaving
-                ? const Padding(
-                    padding: EdgeInsets.all(16),
-                    child: SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    ),
-                  )
-                : TextButton.icon(
-                    onPressed: _saveAsPdf,
-                    icon: const Icon(Icons.save_alt, color: Colors.white),
-                    label: const Text(
-                      'SAVE',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
         ],
       ),
       body: _isLoading
@@ -228,12 +218,9 @@ class _TextEditorScreenState extends State<TextEditorScreen> {
             )
           : Column(
               children: [
-                // Premium Rich Text Toolbar
+                // Premium Rich Text Toolbar (Expanded)
                 RichTextToolbar(
-                  onBoldToggle: () => _insertMarkdown('**'),
-                  onItalicToggle: () => _insertMarkdown('*'),
-                  onFontSizeChange: (size) => _insertMarkdown('# '),
-                  onColorChange: (color) {},
+                  onAction: (tag) => _insertMarkdown(tag),
                   onUndo: () {},
                   onRedo: () {},
                 ),
@@ -277,14 +264,42 @@ class _TextEditorScreenState extends State<TextEditorScreen> {
                   ),
                 ),
 
-                // Bottom hint
+                // Bottom UI
                 SafeArea(
                   top: false,
                   child: Padding(
-                    padding: const EdgeInsets.only(bottom: 8.0),
-                    child: Text(
-                      'Use the toolbar to format. Changes are saved as a new PDF.',
-                      style: TextStyle(fontSize: 11, color: Colors.grey[500]),
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          '${_controller.text.length} characters',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey[500],
+                          ),
+                        ),
+                        ElevatedButton.icon(
+                          onPressed: _isSaving ? null : _saveAsPdf,
+                          icon: _isSaving
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.check_circle_outline),
+                          label: Text(_isSaving ? 'Saving...' : 'SAVE CHANGES'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.indigo,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),

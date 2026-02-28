@@ -131,6 +131,7 @@ class PDFService {
     const double lineHeightNormal = 18.0;
     const double fontSizeNormal = 12.0;
     const double fontSizeH1 = 20.0;
+    const double fontSizeH2 = 16.0;
 
     final PdfFont fontNormal = PdfStandardFont(
       PdfFontFamily.helvetica,
@@ -146,16 +147,29 @@ class PDFService {
       fontSizeNormal,
       style: PdfFontStyle.italic,
     );
+    final PdfFont fontUnderline = PdfStandardFont(
+      PdfFontFamily.helvetica,
+      fontSizeNormal,
+      style: PdfFontStyle.underline,
+    );
+    final PdfFont fontStrike = PdfStandardFont(
+      PdfFontFamily.helvetica,
+      fontSizeNormal,
+      style: PdfFontStyle.strikethrough,
+    );
     final PdfFont fontH1 = PdfStandardFont(
       PdfFontFamily.helvetica,
       fontSizeH1,
       style: PdfFontStyle.bold,
     );
+    final PdfFont fontH2 = PdfStandardFont(
+      PdfFontFamily.helvetica,
+      fontSizeH2,
+      style: PdfFontStyle.bold,
+    );
 
     final PdfBrush blackBrush = PdfSolidBrush(PdfColor(0, 0, 0));
-    final PdfBrush indigoBrush = PdfSolidBrush(
-      PdfColor(63, 81, 181),
-    ); // Materials Indigo
+    final PdfBrush indigoBrush = PdfSolidBrush(PdfColor(63, 81, 181));
 
     // Split text into lines
     final List<String> rawLines = text.split('\n');
@@ -170,29 +184,51 @@ class PDFService {
       PdfFont currentFont = fontNormal;
       PdfBrush currentBrush = blackBrush;
       double currentLineHeight = lineHeightNormal;
+      PdfTextAlignment currentAlignment = PdfTextAlignment.left;
       String lineToDraw = rawLine;
 
-      // 1. Check for Heading (Simple MVP H1)
+      // 1. Check for Headings
       if (rawLine.startsWith('# ')) {
         currentFont = fontH1;
         currentBrush = indigoBrush;
         currentLineHeight = 28.0;
         lineToDraw = rawLine.substring(2);
+      } else if (rawLine.startsWith('## ')) {
+        currentFont = fontH2;
+        currentBrush = indigoBrush;
+        currentLineHeight = 24.0;
+        lineToDraw = rawLine.substring(3);
       }
-      // 2. Check for Bold/Italic (Simplified: Whole line level for now)
-      else if (rawLine.startsWith('**') && rawLine.endsWith('**')) {
+      // 2. Check for Alignment markers
+      else if (rawLine.startsWith('[:center:]')) {
+        currentAlignment = PdfTextAlignment.center;
+        lineToDraw = rawLine.substring(10);
+      } else if (rawLine.startsWith('[:right:]')) {
+        currentAlignment = PdfTextAlignment.right;
+        lineToDraw = rawLine.substring(9);
+      } else if (rawLine.startsWith('[:left:]')) {
+        currentAlignment = PdfTextAlignment.left;
+        lineToDraw = rawLine.substring(8);
+      }
+      // 3. Line-level styles (Simple parser)
+      if (lineToDraw.startsWith('**') && lineToDraw.endsWith('**')) {
         currentFont = fontBold;
-        lineToDraw = rawLine.substring(2, rawLine.length - 2);
-      } else if (rawLine.startsWith('*') && rawLine.endsWith('*')) {
+        lineToDraw = lineToDraw.substring(2, lineToDraw.length - 2);
+      } else if (lineToDraw.startsWith('*') && lineToDraw.endsWith('*')) {
         currentFont = fontItalic;
-        lineToDraw = rawLine.substring(1, rawLine.length - 1);
+        lineToDraw = lineToDraw.substring(1, lineToDraw.length - 1);
+      } else if (lineToDraw.startsWith('__') && lineToDraw.endsWith('__')) {
+        currentFont = fontUnderline;
+        lineToDraw = lineToDraw.substring(2, lineToDraw.length - 2);
+      } else if (lineToDraw.startsWith('~~') && lineToDraw.endsWith('~~')) {
+        currentFont = fontStrike;
+        lineToDraw = lineToDraw.substring(2, lineToDraw.length - 2);
       }
 
-      // Word-wrap each line to fit the page width
+      // Word-wrap helper
       final wrappedLines = _wrapLine(lineToDraw, currentFont, usableWidth);
 
       for (final wLine in wrappedLines) {
-        // Check if we need a new page
         if (y + currentLineHeight > pageHeight - margin) {
           page = document.pages.add();
           y = margin;
@@ -203,11 +239,10 @@ class PDFService {
           currentFont,
           brush: currentBrush,
           bounds: Rect.fromLTWH(margin, y, usableWidth, currentLineHeight),
+          format: PdfStringFormat(alignment: currentAlignment),
         );
         y += currentLineHeight;
       }
-
-      // Blank line spacing
       if (rawLine.isEmpty) y += lineHeightNormal * 0.4;
     }
 

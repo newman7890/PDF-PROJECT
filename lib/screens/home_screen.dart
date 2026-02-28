@@ -24,9 +24,12 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  List<ScannedDocument> _documents = [];
+  List<ScannedDocument> _allDocuments = []; // Cache for filtering
+  List<ScannedDocument> _filteredDocuments = [];
   bool _isLoading = true;
   bool _isImporting = false;
+  bool _isSearching = false;
+  final TextEditingController _searchController = TextEditingController();
 
   @override
   void initState() {
@@ -39,8 +42,17 @@ class _HomeScreenState extends State<HomeScreen> {
     final storage = context.read<StorageService>();
     final docs = await storage.loadDocuments();
     setState(() {
-      _documents = docs;
+      _allDocuments = docs;
+      _filteredDocuments = docs;
       _isLoading = false;
+    });
+  }
+
+  void _filterDocuments(String query) {
+    setState(() {
+      _filteredDocuments = _allDocuments
+          .where((doc) => doc.title.toLowerCase().contains(query.toLowerCase()))
+          .toList();
     });
   }
 
@@ -223,7 +235,7 @@ class _HomeScreenState extends State<HomeScreen> {
         width: 48,
         height: 48,
         decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.1),
+          color: color.withOpacity(0.1),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Icon(icon, color: color),
@@ -345,38 +357,71 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'My Documents',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
+        title: _isSearching
+            ? TextField(
+                controller: _searchController,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  hintText: 'Search documents...',
+                  border: InputBorder.none,
+                  hintStyle: TextStyle(color: Colors.white70),
+                ),
+                style: const TextStyle(color: Colors.white, fontSize: 18),
+                onChanged: _filterDocuments,
+              )
+            : const Text(
+                'My Documents',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+        backgroundColor: Colors.indigo,
+        foregroundColor: Colors.white,
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadDocuments,
-            tooltip: 'Refresh',
-          ),
-          IconButton(
-            icon: const Icon(Icons.settings_outlined),
+            icon: Icon(_isSearching ? Icons.close : Icons.search),
             onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const SettingsScreen()),
-              );
+              setState(() {
+                if (_isSearching) {
+                  _isSearching = false;
+                  _searchController.clear();
+                  _filteredDocuments = _allDocuments;
+                } else {
+                  _isSearching = true;
+                }
+              });
             },
-            tooltip: 'Settings',
           ),
+          if (!_isSearching) ...[
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              onPressed: _loadDocuments,
+              tooltip: 'Refresh',
+            ),
+            IconButton(
+              icon: const Icon(Icons.settings_outlined),
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const SettingsScreen(),
+                  ),
+                );
+              },
+              tooltip: 'Settings',
+            ),
+          ],
         ],
       ),
       body: Stack(
         children: [
           _isLoading
               ? const Center(child: CircularProgressIndicator())
-              : _documents.isEmpty
+              : _filteredDocuments.isEmpty
               ? _buildEmptyState()
               : ListView.builder(
-                  itemCount: _documents.length,
+                  padding: const EdgeInsets.only(top: 8, bottom: 80),
+                  itemCount: _filteredDocuments.length,
                   itemBuilder: (context, index) {
-                    final doc = _documents[index];
+                    final doc = _filteredDocuments[index];
                     return DocumentCard(
                       doc: doc,
                       onTap: () => _openDocument(doc),
@@ -391,7 +436,7 @@ class _HomeScreenState extends State<HomeScreen> {
           // Importing overlay
           if (_isImporting)
             Container(
-              color: Colors.black.withValues(alpha: 0.3),
+              color: Colors.black.withOpacity(0.3),
               child: const Center(
                 child: Card(
                   child: Padding(
@@ -412,6 +457,8 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _showAddOptions,
+        backgroundColor: Colors.indigo,
+        foregroundColor: Colors.white,
         icon: const Icon(Icons.add),
         label: const Text('Add Document'),
       ),
@@ -419,18 +466,20 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildEmptyState() {
+    final bool isSearchEmpty =
+        _isSearching && _searchController.text.isNotEmpty;
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
-            Icons.description_outlined,
+            isSearchEmpty ? Icons.search_off : Icons.description_outlined,
             size: 100,
             color: Colors.grey.shade300,
           ),
           const SizedBox(height: 16),
           Text(
-            'No documents yet',
+            isSearchEmpty ? 'No matches found' : 'No documents yet',
             style: TextStyle(
               fontSize: 18,
               color: Colors.grey.shade600,
@@ -439,15 +488,23 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Tap "Add Document" to scan or import.',
+            isSearchEmpty
+                ? 'Try a different search term.'
+                : 'Tap "Add Document" to scan or import.',
             style: TextStyle(color: Colors.grey.shade500),
           ),
-          const SizedBox(height: 24),
-          OutlinedButton.icon(
-            onPressed: _showAddOptions,
-            icon: const Icon(Icons.add),
-            label: const Text('Add Document'),
-          ),
+          if (!isSearchEmpty) ...[
+            const SizedBox(height: 24),
+            OutlinedButton.icon(
+              onPressed: _showAddOptions,
+              icon: const Icon(Icons.add),
+              label: const Text('Add Document'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.indigo,
+                side: const BorderSide(color: Colors.indigo),
+              ),
+            ),
+          ],
         ],
       ),
     );

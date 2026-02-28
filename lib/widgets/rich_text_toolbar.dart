@@ -2,19 +2,13 @@ import 'package:flutter/material.dart';
 import 'dart:ui';
 
 class RichTextToolbar extends StatelessWidget {
-  final VoidCallback onBoldToggle;
-  final VoidCallback onItalicToggle;
-  final Function(double) onFontSizeChange;
-  final Function(Color) onColorChange;
+  final Function(String) onAction;
   final VoidCallback onUndo;
   final VoidCallback onRedo;
 
   const RichTextToolbar({
     super.key,
-    required this.onBoldToggle,
-    required this.onItalicToggle,
-    required this.onFontSizeChange,
-    required this.onColorChange,
+    required this.onAction,
     required this.onUndo,
     required this.onRedo,
   });
@@ -28,7 +22,7 @@ class RichTextToolbar extends StatelessWidget {
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
           child: Container(
-            height: 50,
+            height: 100, // Two rows for better mobile accessibility
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.6),
               borderRadius: BorderRadius.circular(15),
@@ -41,55 +35,85 @@ class RichTextToolbar extends StatelessWidget {
               ],
               border: Border.all(color: Colors.indigo.withValues(alpha: 0.1)),
             ),
-            child: ListView(
-              scrollDirection: Axis.horizontal,
+            child: Column(
               children: [
-                _ToolbarAction(
-                  icon: Icons.format_bold,
-                  tooltip: 'Bold',
-                  onTap: onBoldToggle,
+                // Top Row: Primary formatting
+                Expanded(
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    children: [
+                      _ToolbarButton(label: 'H1', onTap: () => onAction('# ')),
+                      _ToolbarButton(label: 'H2', onTap: () => onAction('## ')),
+                      _ToolbarButton(label: 'Text', onTap: () {}),
+                      const VerticalDivider(width: 1),
+                      _ToolbarAction(
+                        icon: Icons.format_bold,
+                        onTap: () => onAction('**'),
+                      ),
+                      _ToolbarAction(
+                        icon: Icons.format_italic,
+                        onTap: () => onAction('*'),
+                      ),
+                      _ToolbarAction(
+                        icon: Icons.format_underlined,
+                        onTap: () => onAction('__'),
+                      ),
+                      _ToolbarAction(
+                        icon: Icons.format_strikethrough,
+                        onTap: () => onAction('~~'),
+                      ),
+                      const VerticalDivider(width: 1),
+                      _ToolbarAction(icon: Icons.undo, onTap: onUndo),
+                      _ToolbarAction(icon: Icons.redo, onTap: onRedo),
+                    ],
+                  ),
                 ),
-                _ToolbarAction(
-                  icon: Icons.format_italic,
-                  tooltip: 'Italic',
-                  onTap: onItalicToggle,
-                ),
-                _ToolbarAction(
-                  icon: Icons.format_size,
-                  tooltip: 'Font Size',
-                  onTap: () => onFontSizeChange(20.0),
-                ),
-                const VerticalDivider(width: 1, indent: 12, endIndent: 12),
-                _ToolbarAction(
-                  icon: Icons.palette_outlined,
-                  tooltip: 'Text Color',
-                  onTap: () => onColorChange(Colors.red),
-                ),
-                _ToolbarAction(
-                  icon: Icons.format_align_left,
-                  tooltip: 'Align Left',
-                  onTap: () {},
-                ),
-                _ToolbarAction(
-                  icon: Icons.format_align_center,
-                  tooltip: 'Align Center',
-                  onTap: () {},
-                ),
-                const VerticalDivider(width: 1, indent: 12, endIndent: 12),
-                _ToolbarAction(
-                  icon: Icons.undo,
-                  tooltip: 'Undo',
-                  onTap: onUndo,
-                ),
-                _ToolbarAction(
-                  icon: Icons.redo,
-                  tooltip: 'Redo',
-                  onTap: onRedo,
-                ),
-                _ToolbarAction(
-                  icon: Icons.image_outlined,
-                  tooltip: 'Insert Image',
-                  onTap: () {},
+                const Divider(height: 1),
+                // Bottom Row: Advanced tools
+                Expanded(
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    children: [
+                      _ToolbarAction(
+                        icon: Icons.format_align_left,
+                        onTap: () => onAction('[:left:]'),
+                      ),
+                      _ToolbarAction(
+                        icon: Icons.format_align_center,
+                        onTap: () => onAction('[:center:]'),
+                      ),
+                      _ToolbarAction(
+                        icon: Icons.format_align_right,
+                        onTap: () => onAction('[:right:]'),
+                      ),
+                      const VerticalDivider(width: 1),
+                      _ToolbarAction(
+                        icon: Icons.link,
+                        onTap: () => onAction('[link text](url)'),
+                      ),
+                      _ToolbarAction(
+                        icon: Icons.image_outlined,
+                        onTap: () => onAction('![alt text](image_url)'),
+                      ),
+                      _ToolbarAction(
+                        icon: Icons.subscript,
+                        onTap: () => onAction('~sub~'),
+                      ),
+                      _ToolbarAction(
+                        icon: Icons.superscript,
+                        onTap: () => onAction('^sup^'),
+                      ),
+                      const VerticalDivider(width: 1),
+                      _ToolbarAction(
+                        icon: Icons.palette_outlined,
+                        onTap: () {},
+                      ),
+                      _ToolbarAction(
+                        icon: Icons.format_color_fill,
+                        onTap: () {},
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -102,22 +126,37 @@ class RichTextToolbar extends StatelessWidget {
 
 class _ToolbarAction extends StatelessWidget {
   final IconData icon;
-  final String tooltip;
   final VoidCallback onTap;
 
-  const _ToolbarAction({
-    required this.icon,
-    required this.tooltip,
-    required this.onTap,
-  });
+  const _ToolbarAction({required this.icon, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     return IconButton(
-      icon: Icon(icon, color: Colors.indigo.shade700, size: 22),
-      tooltip: tooltip,
+      icon: Icon(icon, color: Colors.indigo.shade700, size: 20),
       onPressed: onTap,
       splashRadius: 20,
+      visualDensity: VisualDensity.compact,
+    );
+  }
+}
+
+class _ToolbarButton extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+
+  const _ToolbarButton({required this.label, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton(
+      onPressed: onTap,
+      style: TextButton.styleFrom(
+        foregroundColor: Colors.indigo.shade700,
+        textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+        minimumSize: const Size(45, 40),
+      ),
+      child: Text(label),
     );
   }
 }

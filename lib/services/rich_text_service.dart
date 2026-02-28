@@ -50,9 +50,11 @@ class StyledTextController extends TextEditingController {
 
     final List<TextSpan> children = [];
 
-    // Simple parsing logic (MVP version)
+    // Simple parsing logic (Expanded MVP version)
     text.splitMapJoin(
-      RegExp(r'(\*\*.*?\*\*)|(\*.*?\*)|(# .*?\n)'),
+      RegExp(
+        r'(\*\*.*?\*\*)|(\*.*?\*)|(__.*?__)|(~~.*?~~)|(# .*?\n)|(## .*?\n)|(\[:.*?:\])|(\[.*?\]\(.*?\))',
+      ),
       onMatch: (m) {
         final match = m.group(0)!;
         if (match.startsWith('**')) {
@@ -75,6 +77,37 @@ class StyledTextController extends TextEditingController {
               ),
             ),
           );
+        } else if (match.startsWith('__')) {
+          children.add(
+            TextSpan(
+              text: match,
+              style: style?.copyWith(
+                decoration: TextDecoration.underline,
+                color: Colors.blue,
+              ),
+            ),
+          );
+        } else if (match.startsWith('~~')) {
+          children.add(
+            TextSpan(
+              text: match,
+              style: style?.copyWith(
+                decoration: TextDecoration.lineThrough,
+                color: Colors.redAccent,
+              ),
+            ),
+          );
+        } else if (match.startsWith('##')) {
+          children.add(
+            TextSpan(
+              text: match,
+              style: style?.copyWith(
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+                color: Colors.indigoAccent,
+              ),
+            ),
+          );
         } else if (match.startsWith('#')) {
           children.add(
             TextSpan(
@@ -83,6 +116,27 @@ class StyledTextController extends TextEditingController {
                 fontWeight: FontWeight.bold,
                 fontSize: 22,
                 color: Colors.deepPurple,
+              ),
+            ),
+          );
+        } else if (match.startsWith('[:')) {
+          children.add(
+            TextSpan(
+              text: match,
+              style: style?.copyWith(
+                color: Colors.grey,
+                fontSize: 10,
+                fontStyle: FontStyle.italic,
+              ),
+            ),
+          );
+        } else if (match.startsWith('[')) {
+          children.add(
+            TextSpan(
+              text: match,
+              style: style?.copyWith(
+                color: Colors.blue,
+                decoration: TextDecoration.underline,
               ),
             ),
           );
