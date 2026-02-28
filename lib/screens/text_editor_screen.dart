@@ -7,7 +7,6 @@ import '../services/pdf_service.dart';
 import '../services/storage_service.dart';
 import '../services/ocr_service.dart';
 import '../services/rich_text_service.dart';
-import '../widgets/rich_text_toolbar.dart';
 
 /// A screen that extracts the text from a PDF and lets the user edit it,
 /// then saves the result as a new PDF.
@@ -68,52 +67,6 @@ class _TextEditorScreenState extends State<TextEditorScreen> {
         _isLoading = false;
         _controller.text = '(Error extracting text: $e)';
       });
-    }
-  }
-
-  void _insertMarkdown(String tag) {
-    final selection = _controller.selection;
-    final text = _controller.text;
-
-    // Handle block tags (#, ##, alignment) vs inline tags (**, *, __, ~~)
-    final bool isBlockTag = tag.startsWith('#') || tag.startsWith('[:');
-
-    if (selection.isCollapsed) {
-      if (isBlockTag) {
-        // Insert at start of current line
-        int lineStart = text.lastIndexOf('\n', selection.start - 1) + 1;
-        final newText = text.replaceRange(lineStart, lineStart, tag);
-        _controller.value = _controller.value.copyWith(
-          text: newText,
-          selection: TextSelection.collapsed(
-            offset: selection.start + tag.length,
-          ),
-        );
-      } else {
-        // Insert at cursor
-        final newText = text.replaceRange(selection.start, selection.end, tag);
-        _controller.value = _controller.value.copyWith(
-          text: newText,
-          selection: TextSelection.collapsed(
-            offset: selection.start + tag.length,
-          ),
-        );
-      }
-    } else {
-      // Wrap selection
-      final selectedText = text.substring(selection.start, selection.end);
-      final newText = text.replaceRange(
-        selection.start,
-        selection.end,
-        '$tag$selectedText$tag',
-      );
-      _controller.value = _controller.value.copyWith(
-        text: newText,
-        selection: TextSelection(
-          baseOffset: selection.start,
-          extentOffset: selection.end + (tag.length * 2),
-        ),
-      );
     }
   }
 
@@ -233,17 +186,10 @@ class _TextEditorScreenState extends State<TextEditorScreen> {
             )
           : Column(
               children: [
-                // Premium Rich Text Toolbar (Expanded)
-                RichTextToolbar(
-                  onAction: (tag) => _insertMarkdown(tag),
-                  onUndo: () => _controller.undo(),
-                  onRedo: () => _controller.redo(),
-                ),
-
                 // Text editor container
                 Expanded(
                   child: Container(
-                    margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                    margin: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(15),
