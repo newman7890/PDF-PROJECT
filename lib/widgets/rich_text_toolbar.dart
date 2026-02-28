@@ -22,7 +22,7 @@ class RichTextToolbar extends StatelessWidget {
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
           child: Container(
-            height: 100, // Two rows for better mobile accessibility
+            height: 100,
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.6),
               borderRadius: BorderRadius.circular(15),
@@ -37,14 +37,16 @@ class RichTextToolbar extends StatelessWidget {
             ),
             child: Column(
               children: [
-                // Top Row: Primary formatting
                 Expanded(
                   child: ListView(
                     scrollDirection: Axis.horizontal,
                     children: [
                       _ToolbarButton(label: 'H1', onTap: () => onAction('# ')),
                       _ToolbarButton(label: 'H2', onTap: () => onAction('## ')),
-                      _ToolbarButton(label: 'Text', onTap: () {}),
+                      _ToolbarButton(
+                        label: 'Normal',
+                        onTap: () => onAction(''),
+                      ),
                       const VerticalDivider(width: 1),
                       _ToolbarAction(
                         icon: Icons.format_bold,
@@ -69,7 +71,6 @@ class RichTextToolbar extends StatelessWidget {
                   ),
                 ),
                 const Divider(height: 1),
-                // Bottom Row: Advanced tools
                 Expanded(
                   child: ListView(
                     scrollDirection: Axis.horizontal,
@@ -93,7 +94,7 @@ class RichTextToolbar extends StatelessWidget {
                       ),
                       _ToolbarAction(
                         icon: Icons.image_outlined,
-                        onTap: () => onAction('![alt text](image_url)'),
+                        onTap: () => onAction('![alt](url)'),
                       ),
                       _ToolbarAction(
                         icon: Icons.subscript,
@@ -132,11 +133,14 @@ class _ToolbarAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // CRITICAL FIX: canRequestFocus: false prevents the button from
+    // stealing focus from the TextField, keeping the keyboard open.
     return IconButton(
       icon: Icon(icon, color: Colors.indigo.shade700, size: 20),
       onPressed: onTap,
       splashRadius: 20,
       visualDensity: VisualDensity.compact,
+      focusNode: FocusNode(canRequestFocus: false),
     );
   }
 }
@@ -151,6 +155,7 @@ class _ToolbarButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return TextButton(
       onPressed: onTap,
+      focusNode: FocusNode(canRequestFocus: false),
       style: TextButton.styleFrom(
         foregroundColor: Colors.indigo.shade700,
         textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
