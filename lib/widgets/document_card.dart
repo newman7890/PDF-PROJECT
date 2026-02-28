@@ -8,6 +8,9 @@ class DocumentCard extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onDelete;
   final VoidCallback onShare;
+  final VoidCallback onRename;
+  final VoidCallback? onEdit;
+  final VoidCallback? onEditAsText;
 
   const DocumentCard({
     super.key,
@@ -15,6 +18,9 @@ class DocumentCard extends StatelessWidget {
     required this.onTap,
     required this.onDelete,
     required this.onShare,
+    required this.onRename,
+    this.onEdit,
+    this.onEditAsText,
   });
 
   @override
@@ -60,6 +66,9 @@ class DocumentCard extends StatelessWidget {
         trailing: PopupMenuButton<String>(
           onSelected: (value) {
             if (value == 'share') onShare();
+            if (value == 'edit' && onEdit != null) onEdit!();
+            if (value == 'editText' && onEditAsText != null) onEditAsText!();
+            if (value == 'rename') onRename();
             if (value == 'delete') onDelete();
           },
           itemBuilder: (context) => [
@@ -70,6 +79,46 @@ class DocumentCard extends StatelessWidget {
                   Icon(Icons.share, size: 20),
                   SizedBox(width: 8),
                   Text('Share'),
+                ],
+              ),
+            ),
+            const PopupMenuItem(
+              value: 'edit',
+              child: Row(
+                children: [
+                  Icon(Icons.edit, size: 20),
+                  SizedBox(width: 8),
+                  Text('Direct Edit (Overlay)'),
+                ],
+              ),
+            ),
+            const PopupMenuItem(
+              value: 'editText',
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.text_snippet_outlined,
+                    size: 20,
+                    color: Colors.indigo,
+                  ),
+                  SizedBox(width: 8),
+                  Text(
+                    'Edit as Text',
+                    style: TextStyle(
+                      color: Colors.indigo,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const PopupMenuItem(
+              value: 'rename',
+              child: Row(
+                children: [
+                  Icon(Icons.drive_file_rename_outline, size: 20),
+                  SizedBox(width: 8),
+                  Text('Rename'),
                 ],
               ),
             ),

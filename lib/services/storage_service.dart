@@ -63,6 +63,43 @@ class StorageService {
     }
   }
 
+  /// Renames a document and its physical file.
+  Future<ScannedDocument> renameDocument(
+    ScannedDocument doc,
+    String newTitle,
+  ) async {
+    final docs = await loadDocuments();
+    final index = docs.indexWhere((item) => item.id == doc.id);
+
+    if (index == -1) throw Exception("Document not found");
+
+    // Clean new title for filename
+    String safeName = newTitle.replaceAll(RegExp(r'[^\w\s\-]'), '_');
+    if (!safeName.toLowerCase().endsWith('.pdf')) {
+      safeName += '.pdf';
+    }
+
+    final directory = await _localDirectory;
+    final newPath = path.join(directory.path, safeName);
+
+    // Rename physical file
+    final oldFile = File(doc.filePath);
+    if (oldFile.existsSync()) {
+      await oldFile.rename(newPath);
+    }
+
+    // Update metadata
+    final updatedDoc = doc.copyWith(
+      title: newTitle.endsWith('.pdf') ? newTitle : '$newTitle.pdf',
+      filePath: newPath,
+    );
+
+    docs[index] = updatedDoc;
+    await _saveMetadata(docs);
+
+    return updatedDoc;
+  }
+
   /// Helper to save the document list to JSON.
   Future<void> _saveMetadata(List<ScannedDocument> docs) async {
     final directory = await _localDirectory;

@@ -11,7 +11,10 @@ import '../services/pdf_service.dart';
 import '../models/scanned_document.dart';
 import '../widgets/document_card.dart';
 import 'scanner_screen.dart';
+import 'viewer_screen.dart' show PdfViewerScreen;
 import 'editor_screen.dart';
+import 'text_editor_screen.dart';
+import 'settings_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -53,7 +56,21 @@ class _HomeScreenState extends State<HomeScreen> {
   void _openDocument(ScannedDocument doc) {
     Navigator.push(
       context,
+      MaterialPageRoute(builder: (context) => PdfViewerScreen(document: doc)),
+    ).then((_) => _loadDocuments());
+  }
+
+  void _openEditor(ScannedDocument doc) {
+    Navigator.push(
+      context,
       MaterialPageRoute(builder: (context) => EditorScreen(document: doc)),
+    ).then((_) => _loadDocuments());
+  }
+
+  void _openTextEditor(ScannedDocument doc) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => TextEditorScreen(document: doc)),
     ).then((_) => _loadDocuments());
   }
 
@@ -86,6 +103,46 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
       final storage = context.read<StorageService>();
       await storage.deleteDocument(doc);
+      _loadDocuments();
+    }
+  }
+
+  void _renameDocument(ScannedDocument doc) async {
+    final controller = TextEditingController(
+      text: doc.title.replaceAll('.pdf', ''),
+    );
+    final newTitle = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Rename Document'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'New Title',
+            border: OutlineInputBorder(),
+          ),
+          onSubmitted: (value) => Navigator.pop(context, value),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('Rename'),
+          ),
+        ],
+      ),
+    );
+
+    if (newTitle != null &&
+        newTitle.trim().isNotEmpty &&
+        newTitle != doc.title) {
+      if (!mounted) return;
+      final storage = context.read<StorageService>();
+      await storage.renameDocument(doc, newTitle.trim());
       _loadDocuments();
     }
   }
@@ -298,6 +355,16 @@ class _HomeScreenState extends State<HomeScreen> {
             onPressed: _loadDocuments,
             tooltip: 'Refresh',
           ),
+          IconButton(
+            icon: const Icon(Icons.settings_outlined),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const SettingsScreen()),
+              );
+            },
+            tooltip: 'Settings',
+          ),
         ],
       ),
       body: Stack(
@@ -314,6 +381,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       doc: doc,
                       onTap: () => _openDocument(doc),
                       onShare: () => _shareDocument(doc),
+                      onEdit: () => _openEditor(doc),
+                      onEditAsText: () => _openTextEditor(doc),
+                      onRename: () => _renameDocument(doc),
                       onDelete: () => _deleteDocument(doc),
                     );
                   },

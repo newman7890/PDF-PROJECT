@@ -1,4 +1,4 @@
-import 'dart:io';
+// Removed unused dart:io import
 import 'package:flutter/material.dart';
 import 'package:google_mlkit_document_scanner/google_mlkit_document_scanner.dart';
 import 'package:provider/provider.dart';
@@ -6,9 +6,8 @@ import 'package:provider/provider.dart';
 import '../services/pdf_service.dart';
 import '../services/storage_service.dart';
 import '../services/permission_service.dart';
-import '../services/image_processing_service.dart';
 import '../models/scanned_document.dart';
-import 'editor_screen.dart';
+import 'viewer_screen.dart' show PdfViewerScreen;
 
 /// Screen that handles the camera-based document scanning logic.
 class ScannerScreen extends StatefulWidget {
@@ -99,7 +98,6 @@ class _ScannerScreenState extends State<ScannerScreen> {
   Future<void> _convertImagesToPdf(List<String> images) async {
     final pdfService = context.read<PDFService>();
     final storage = context.read<StorageService>();
-    final imageProcessor = context.read<ImageProcessingService>();
 
     setState(() {
       _isScanning = true;
@@ -109,10 +107,7 @@ class _ScannerScreenState extends State<ScannerScreen> {
       final List<String> enhancedImagePaths = [];
 
       for (int i = 0; i < images.length; i++) {
-        final File enhancedFile = await imageProcessor.autoEnhance(
-          File(images[i]),
-        );
-        enhancedImagePaths.add(enhancedFile.path);
+        enhancedImagePaths.add(images[i]);
       }
 
       final timestamp = DateTime.now().millisecondsSinceEpoch;
@@ -133,7 +128,9 @@ class _ScannerScreenState extends State<ScannerScreen> {
       if (mounted) {
         Navigator.pushReplacement(
           context,
-          MaterialPageRoute(builder: (context) => EditorScreen(document: doc)),
+          MaterialPageRoute(
+            builder: (context) => PdfViewerScreen(document: doc),
+          ),
         );
       }
     } catch (e) {

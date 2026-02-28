@@ -8,12 +8,15 @@ class ScannedDocument {
   final DateTime dateCreated;
   final bool isPdf;
 
+  final bool? isScanned;
+
   ScannedDocument({
     required this.id,
     required this.title,
     required this.filePath,
     required this.dateCreated,
     this.isPdf = true,
+    this.isScanned,
   });
 
   /// Factory constructor to create a ScannedDocument from a Map (useful for local storage).
@@ -24,6 +27,23 @@ class ScannedDocument {
       filePath: map['filePath'],
       dateCreated: DateTime.parse(map['dateCreated']),
       isPdf: map['isPdf'] ?? true,
+      isScanned: map['isScanned'],
+    );
+  }
+
+  ScannedDocument copyWith({
+    String? title,
+    String? filePath,
+    bool? isPdf,
+    bool? isScanned,
+  }) {
+    return ScannedDocument(
+      id: id,
+      title: title ?? this.title,
+      filePath: filePath ?? this.filePath,
+      dateCreated: dateCreated,
+      isPdf: isPdf ?? this.isPdf,
+      isScanned: isScanned ?? this.isScanned,
     );
   }
 
@@ -35,6 +55,7 @@ class ScannedDocument {
       'filePath': filePath,
       'dateCreated': dateCreated.toIso8601String(),
       'isPdf': isPdf,
+      'isScanned': isScanned,
     };
   }
 
