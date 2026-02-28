@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:ui';
 
 class RichTextToolbar extends StatelessWidget {
   final VoidCallback onBoldToggle;
@@ -20,74 +21,78 @@ class RichTextToolbar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(15),
-      child: BackdropFilter(
-        filter: ColorFilter.mode(
-          Colors.white.withValues(alpha: 0.8),
-          BlendMode.lighten,
-        ),
-        child: Container(
-          height: 50,
-          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.6),
-            borderRadius: BorderRadius.circular(15),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.05),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-            ],
-            border: Border.all(color: Colors.indigo.withValues(alpha: 0.1)),
-          ),
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            children: [
-              _ToolbarAction(
-                icon: Icons.format_bold,
-                tooltip: 'Bold',
-                onTap: onBoldToggle,
-              ),
-              _ToolbarAction(
-                icon: Icons.format_italic,
-                tooltip: 'Italic',
-                onTap: onItalicToggle,
-              ),
-              _ToolbarAction(
-                icon: Icons.format_size,
-                tooltip: 'Font Size',
-                onTap: () {
-                  // Quick font size picker shim
-                  onFontSizeChange(20.0);
-                },
-              ),
-              const VerticalDivider(width: 1, indent: 12, endIndent: 12),
-              _ToolbarAction(
-                icon: Icons.palette_outlined,
-                tooltip: 'Text Color',
-                onTap: () => onColorChange(Colors.red),
-              ),
-              _ToolbarAction(
-                icon: Icons.format_align_left,
-                tooltip: 'Align Left',
-                onTap: () {},
-              ),
-              _ToolbarAction(
-                icon: Icons.format_align_center,
-                tooltip: 'Align Center',
-                onTap: () {},
-              ),
-              const VerticalDivider(width: 1, indent: 12, endIndent: 12),
-              _ToolbarAction(icon: Icons.undo, tooltip: 'Undo', onTap: onUndo),
-              _ToolbarAction(icon: Icons.redo, tooltip: 'Redo', onTap: onRedo),
-              _ToolbarAction(
-                icon: Icons.image_outlined,
-                tooltip: 'Insert Image',
-                onTap: () {},
-              ),
-            ],
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(15),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 5, sigmaY: 5),
+          child: Container(
+            height: 50,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.6),
+              borderRadius: BorderRadius.circular(15),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.05),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+              border: Border.all(color: Colors.indigo.withValues(alpha: 0.1)),
+            ),
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: [
+                _ToolbarAction(
+                  icon: Icons.format_bold,
+                  tooltip: 'Bold',
+                  onTap: onBoldToggle,
+                ),
+                _ToolbarAction(
+                  icon: Icons.format_italic,
+                  tooltip: 'Italic',
+                  onTap: onItalicToggle,
+                ),
+                _ToolbarAction(
+                  icon: Icons.format_size,
+                  tooltip: 'Font Size',
+                  onTap: () => onFontSizeChange(20.0),
+                ),
+                const VerticalDivider(width: 1, indent: 12, endIndent: 12),
+                _ToolbarAction(
+                  icon: Icons.palette_outlined,
+                  tooltip: 'Text Color',
+                  onTap: () => onColorChange(Colors.red),
+                ),
+                _ToolbarAction(
+                  icon: Icons.format_align_left,
+                  tooltip: 'Align Left',
+                  onTap: () {},
+                ),
+                _ToolbarAction(
+                  icon: Icons.format_align_center,
+                  tooltip: 'Align Center',
+                  onTap: () {},
+                ),
+                const VerticalDivider(width: 1, indent: 12, endIndent: 12),
+                _ToolbarAction(
+                  icon: Icons.undo,
+                  tooltip: 'Undo',
+                  onTap: onUndo,
+                ),
+                _ToolbarAction(
+                  icon: Icons.redo,
+                  tooltip: 'Redo',
+                  onTap: onRedo,
+                ),
+                _ToolbarAction(
+                  icon: Icons.image_outlined,
+                  tooltip: 'Insert Image',
+                  onTap: () {},
+                ),
+              ],
+            ),
           ),
         ),
       ),
