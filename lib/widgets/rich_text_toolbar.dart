@@ -85,6 +85,7 @@ class RichTextToolbar extends StatelessWidget {
             onTap: () {},
           ),
         ],
+        ),
       ),
     );
   }
