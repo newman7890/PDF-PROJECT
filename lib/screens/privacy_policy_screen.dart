@@ -18,80 +18,128 @@ class PrivacyPolicyScreen extends StatelessWidget {
         elevation: 0,
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Privacy Policy for PDF Scanner & Viewer',
-              style: theme.textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.bold,
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(24.0),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.primaryContainer.withAlpha(50),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.security_outlined,
+                    size: 48,
+                    color: theme.colorScheme.primary,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Privacy First',
+                    style: theme.textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                      color: theme.colorScheme.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Your documents never leave your device. We prioritize your data sovereignty above all else.',
+                    style: theme.textTheme.bodyLarge,
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 16),
-            Text(
-              'Last Updated: February 2026',
-              style: theme.textTheme.bodySmall?.copyWith(
-                fontStyle: FontStyle.italic,
+            Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Last Updated: March 2026',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+                  _buildSection(
+                    context,
+                    Icons.inventory_2_outlined,
+                    '1. Local Data Processing',
+                    'Our application is built on the principle of local-first processing. All PDF generation, document scanning, and text recognition occur entirely on your smartphone. We do not operate any cloud servers to store your files.',
+                  ),
+                  _buildSection(
+                    context,
+                    Icons.vpn_key_outlined,
+                    '2. Necessary Permissions',
+                    'To function correctly, we require access to your Camera (for scanning) and Storage (for saving/opening PDFs). These permissions are used exclusively for app features and are never shared with third parties.',
+                  ),
+                  _buildSection(
+                    context,
+                    Icons.auto_awesome_outlined,
+                    '3. Smart Recognition',
+                    'We utilize Google ML Kit for high-performance, on-device text recognition. This integration is designed to work offline, ensuring your document content remains private and secure.',
+                  ),
+                  _buildSection(
+                    context,
+                    Icons.shield_outlined,
+                    '4. Security Recommendations',
+                    'Since you are the sole controller of your data, we recommend utilizing your device\'s built-in security features (FaceID, TouchID, or Passcodes) to protect your scanned documents.',
+                  ),
+                  _buildSection(
+                    context,
+                    Icons.update_outlined,
+                    '5. Policy Updates',
+                    'We may periodically update this policy to reflect new features or changes in legislation. Significant changes will be announced via app updates.',
+                  ),
+                  const SizedBox(height: 20),
+                  Center(
+                    child: Text(
+                      '© 2026 PDF PROJECTT Team',
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ),
+                  const SizedBox(height: 40),
+                ],
               ),
             ),
-            const SizedBox(height: 24),
-            _buildSection(
-              context,
-              '1. Information We Collect',
-              'Our application is designed to respect your privacy. We do not collect, store, or transmit any of your personal data, documents, or scanned images to external servers. All processing (PDF generation and viewing) happens locally on your device.',
-            ),
-            _buildSection(
-              context,
-              '2. Permissions',
-              'The app requires access to your Camera to scan documents and Storage to save and open PDF files. These permissions are used solely for the functionality of the app on your device.',
-            ),
-            _buildSection(
-              context,
-              '3. Third-Party Services',
-              'We use Google ML Kit for on-device text recognition. This service operates entirely on your phone and does not send your data to Google servers for processing.',
-            ),
-            _buildSection(
-              context,
-              '4. Data Security',
-              'As your data never leaves your device through our app, you are in full control of your documents. We recommend using device-level security (passcodes, biometrics) to protect your files.',
-            ),
-            _buildSection(
-              context,
-              '5. Changes to This Policy',
-              'We may update our Privacy Policy from time to time. Any changes will be posted on this page with an updated "Last Updated" date.',
-            ),
-            _buildSection(
-              context,
-              '6. Contact Us',
-              'If you have any questions about this Privacy Policy, please contact us at support@example.com.',
-            ),
-            const SizedBox(height: 40),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildSection(BuildContext context, String title, String content) {
+  Widget _buildSection(
+    BuildContext context,
+    IconData icon,
+    String title,
+    String content,
+  ) {
+    final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.only(bottom: 20.0),
+      padding: const EdgeInsets.only(bottom: 32.0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: Theme.of(context).colorScheme.primary,
-            ),
+          Row(
+            children: [
+              Icon(icon, size: 20, color: theme.colorScheme.primary),
+              const SizedBox(width: 12),
+              Text(
+                title,
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           Text(
             content,
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(height: 1.5),
+            style: theme.textTheme.bodyMedium?.copyWith(
+              height: 1.6,
+              color: Colors.black87,
+            ),
           ),
         ],
       ),

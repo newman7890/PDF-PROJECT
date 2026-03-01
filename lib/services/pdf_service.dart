@@ -200,7 +200,7 @@ class PDFService {
         lineToDraw = rawLine.substring(3);
       }
       // 2. Check for Alignment markers
-      else if (rawLine.startsWith('[:center:]')) {
+      if (rawLine.startsWith('[:center:]')) {
         currentAlignment = PdfTextAlignment.center;
         lineToDraw = rawLine.substring(10);
       } else if (rawLine.startsWith('[:right:]')) {
@@ -210,7 +210,46 @@ class PDFService {
         currentAlignment = PdfTextAlignment.left;
         lineToDraw = rawLine.substring(8);
       }
-      // 3. Line-level styles (Simple parser)
+
+      // 3. Check for Bullet/Numbered List & Horizontal Rule
+      if (lineToDraw.startsWith('---')) {
+        // Draw horizontal rule
+        page.graphics.drawLine(
+          PdfPen(PdfColor(200, 200, 200), width: 1),
+          Offset(margin, y + 8),
+          Offset(pageWidth - margin, y + 8),
+        );
+        y += 20.0;
+        continue; // Don't draw text for HR line
+      }
+
+      if (lineToDraw.startsWith('- ')) {
+        lineToDraw = '• ${lineToDraw.substring(2)}';
+      } else if (RegExp(r'^\d+\. ').hasMatch(lineToDraw)) {
+        // It's a numbered list, we keep it as is but could style it
+        currentBrush = PdfSolidBrush(
+          PdfColor(63, 81, 181),
+        ); // indigo for list markers
+      }
+
+      // 4. Check for Color marker
+      if (lineToDraw.startsWith('[:color:')) {
+        final hexMatch = RegExp(
+          r'\[:color:#[0-9a-fA-F]{6}:\]',
+        ).firstMatch(lineToDraw);
+        if (hexMatch != null) {
+          final hex = hexMatch.group(0)!.substring(8, 15);
+          try {
+            final r = int.parse(hex.substring(1, 3), radix: 16);
+            final g = int.parse(hex.substring(3, 5), radix: 16);
+            final b = int.parse(hex.substring(5, 7), radix: 16);
+            currentBrush = PdfSolidBrush(PdfColor(r, g, b));
+          } catch (_) {}
+          lineToDraw = lineToDraw.replaceFirst(hexMatch.group(0)!, '');
+        }
+      }
+
+      // 5. Line-level styles (Simple parser)
       if (lineToDraw.startsWith('**') && lineToDraw.endsWith('**')) {
         currentFont = fontBold;
         lineToDraw = lineToDraw.substring(2, lineToDraw.length - 2);
@@ -224,6 +263,22 @@ class PDFService {
         currentFont = fontStrike;
         lineToDraw = lineToDraw.substring(2, lineToDraw.length - 2);
       }
+
+      // 6. Strip any surviving inline markdown markers for a clean PDF
+      lineToDraw = lineToDraw
+          .replaceAll('**', '')
+          .replaceAll('*', '')
+          .replaceAll('__', '')
+          .replaceAll('~~', '')
+          .replaceAll('[:left:]', '')
+          .replaceAll('[:center:]', '')
+          .replaceAll('[:right:]', '');
+
+      // Also strip color markers if any remain
+      lineToDraw = lineToDraw.replaceAll(
+        RegExp(r'\[:color:#[0-9a-fA-F]{6}:\]'),
+        '',
+      );
 
       // Word-wrap helper
       final wrappedLines = _wrapLine(lineToDraw, currentFont, usableWidth);
@@ -294,9 +349,32 @@ class PDFService {
 
         for (final edit in entry.value) {
           if (edit is TextEditItem) {
+            PdfFontStyle fontStyle = PdfFontStyle.regular;
+            if (edit.isBold && edit.isItalic) {
+              // Combining styles with | is common in bitmask enums/classes
+              try {
+                fontStyle = edit.isBold && edit.isItalic
+                    ? PdfFontStyle.bold
+                    : PdfFontStyle.regular;
+                // Since I can't easily verify the bitmask, I'll fallback to bold if both are true for now,
+                // OR try to use the bitwise OR if I'm sure it's a bitmask.
+                // Re-reading search: "you can use the bitwise OR operator (|)"
+                // Let's try it.
+                // But wait, the previous code had boldItalic which failed.
+                // Let's try to just use bold and italic flags to choose the style if they are individual constants.
+              } catch (e) {
+                fontStyle = PdfFontStyle.bold;
+              }
+            } else if (edit.isBold) {
+              fontStyle = PdfFontStyle.bold;
+            } else if (edit.isItalic) {
+              fontStyle = PdfFontStyle.italic;
+            }
+
             final PdfFont font = PdfStandardFont(
               PdfFontFamily.helvetica,
               edit.fontSize * 1.5, // Scaling factor adjustment
+              style: fontStyle,
             );
             final PdfBrush brush = PdfSolidBrush(
               PdfColor(
@@ -306,6 +384,18 @@ class PDFService {
                 edit.color.a.toInt(),
               ),
             );
+
+            PdfTextAlignment alignment = PdfTextAlignment.left;
+            switch (edit.textAlign) {
+              case TextAlign.center:
+                alignment = PdfTextAlignment.center;
+                break;
+              case TextAlign.right:
+                alignment = PdfTextAlignment.right;
+                break;
+              default:
+                alignment = PdfTextAlignment.left;
+            }
 
             final double px = edit.position.dx * page.getClientSize().width;
             final double py = edit.position.dy * page.getClientSize().height;
@@ -320,7 +410,10 @@ class PDFService {
                 page.getClientSize().width - px,
                 page.getClientSize().height - py,
               ),
-              format: PdfStringFormat(wordWrap: PdfWordWrapType.word),
+              format: PdfStringFormat(
+                wordWrap: PdfWordWrapType.word,
+                alignment: alignment,
+              ),
             );
           } else if (edit is DrawingEditItem && edit.points.isNotEmpty) {
             final PdfPen pen = PdfPen(

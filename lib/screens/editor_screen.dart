@@ -197,8 +197,12 @@ class _EditorScreenState extends State<EditorScreen> {
               children: [
                 Expanded(
                   child: InteractiveViewer(
-                    panEnabled: editor.activeTool == null,
-                    scaleEnabled: editor.activeTool == null,
+                    panEnabled:
+                        editor.activeTool == null &&
+                        editor.selectedItemId == null,
+                    scaleEnabled:
+                        editor.activeTool == null &&
+                        editor.selectedItemId == null,
                     minScale: 0.5,
                     maxScale: 4.0,
                     child: Center(
@@ -249,6 +253,8 @@ class _EditorScreenState extends State<EditorScreen> {
                                               child: GestureDetector(
                                                 behavior:
                                                     HitTestBehavior.opaque,
+                                                onTap: () =>
+                                                    editor.selectItem(item.id),
                                                 onPanUpdate:
                                                     editor.activeTool == null
                                                     ? (d) {
@@ -273,23 +279,35 @@ class _EditorScreenState extends State<EditorScreen> {
                                                   padding: const EdgeInsets.all(
                                                     2,
                                                   ),
-                                                  decoration:
-                                                      editor.activeTool == null
-                                                      ? BoxDecoration(
-                                                          border: Border.all(
-                                                            color: Colors
-                                                                .blueAccent,
-                                                            width: 1,
-                                                          ),
-                                                        )
-                                                      : null,
+                                                  decoration: BoxDecoration(
+                                                    border: Border.all(
+                                                      color:
+                                                          editor.selectedItemId ==
+                                                              item.id
+                                                          ? Colors.blue
+                                                          : Colors.blueAccent
+                                                                .withValues(
+                                                                  alpha: 0.3,
+                                                                ),
+                                                      width:
+                                                          editor.selectedItemId ==
+                                                              item.id
+                                                          ? 2
+                                                          : 1,
+                                                    ),
+                                                  ),
                                                   child: Text(
                                                     item.text,
+                                                    textAlign: item.textAlign,
                                                     style: TextStyle(
                                                       color: item.color,
                                                       fontSize: item.fontSize,
-                                                      fontWeight:
-                                                          FontWeight.bold,
+                                                      fontWeight: item.isBold
+                                                          ? FontWeight.bold
+                                                          : FontWeight.normal,
+                                                      fontStyle: item.isItalic
+                                                          ? FontStyle.italic
+                                                          : FontStyle.normal,
                                                     ),
                                                   ),
                                                 ),
@@ -359,6 +377,16 @@ class _EditorScreenState extends State<EditorScreen> {
                                               }
                                             },
                                           ),
+                                        )
+                                      else
+                                        // Background tap to clear selection
+                                        Positioned.fill(
+                                          child: GestureDetector(
+                                            behavior:
+                                                HitTestBehavior.translucent,
+                                            onTap: () =>
+                                                editor.selectItem(null),
+                                          ),
                                         ),
                                     ],
                                   );
@@ -376,95 +404,251 @@ class _EditorScreenState extends State<EditorScreen> {
 
   Widget _buildToolbar(PdfEditorService editor) {
     return Container(
-      color: Colors.grey[200],
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, -5),
+          ),
+        ],
+      ),
       child: SafeArea(
+        top: false,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _ToolButton(
-                  icon: Icons.pan_tool_outlined,
-                  label: 'Move',
-                  isActive: editor.activeTool == null,
-                  onTap: () => editor.setActiveTool(null),
-                ),
-                _ToolButton(
-                  icon: Icons.text_fields,
-                  label: 'Text',
-                  isActive: editor.activeTool == EditType.text,
-                  onTap: () => editor.setActiveTool(EditType.text),
-                ),
-                _ToolButton(
-                  icon: Icons.edit,
-                  label: 'Draw',
-                  isActive: editor.activeTool == EditType.drawing,
-                  onTap: () => editor.setActiveTool(EditType.drawing),
-                ),
-                _ToolButton(
-                  icon: Icons.format_color_fill,
-                  label: 'Redact',
-                  isActive: editor.activeTool == EditType.redact,
-                  onTap: () => editor.setActiveTool(EditType.redact),
-                ),
-              ],
-            ),
-            if (editor.activeTool != null) ...[
-              const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children:
-                    [
-                          Colors.black,
-                          Colors.red,
-                          Colors.blue,
-                          Colors.green,
-                          Colors.white,
-                        ]
-                        .map(
-                          (c) => Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 4),
-                            child: GestureDetector(
-                              onTap: () => editor.setColor(c),
-                              child: CircleAvatar(
-                                backgroundColor: c,
-                                radius: 12,
-                                child: editor.currentColor == c
-                                    ? const Icon(
-                                        Icons.check,
-                                        size: 12,
-                                        color: Colors.grey,
-                                      )
-                                    : null,
-                              ),
-                            ),
-                          ),
-                        )
-                        .toList(),
+            // Selection/Formatting sub-toolbar
+            if (editor.selectedItemId != null || editor.activeTool != null)
+              _buildFormattingOptions(editor),
+
+            const Divider(height: 1),
+
+            // Main tool buttons
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _ToolButton(
+                    icon: Icons.pan_tool_outlined,
+                    label: 'Move',
+                    isActive:
+                        editor.activeTool == null &&
+                        editor.selectedItemId == null,
+                    onTap: () {
+                      editor.setActiveTool(null);
+                      editor.selectItem(null);
+                    },
+                  ),
+                  _ToolButton(
+                    icon: Icons.text_fields,
+                    label: 'Text',
+                    isActive: editor.activeTool == EditType.text,
+                    onTap: () => editor.setActiveTool(EditType.text),
+                  ),
+                  _ToolButton(
+                    icon: Icons.edit,
+                    label: 'Draw',
+                    isActive: editor.activeTool == EditType.drawing,
+                    onTap: () => editor.setActiveTool(EditType.drawing),
+                  ),
+                  _ToolButton(
+                    icon: Icons.format_color_fill,
+                    label: 'Redact',
+                    isActive: editor.activeTool == EditType.redact,
+                    onTap: () => editor.setActiveTool(EditType.redact),
+                  ),
+                  _ToolButton(
+                    icon: Icons.delete_outline,
+                    label: 'Delete',
+                    isActive: false,
+                    onTap: () {
+                      if (editor.selectedItemId != null) {
+                        editor.deleteItem(editor.selectedItemId!);
+                      }
+                    },
+                  ),
+                ],
               ),
-            ],
-            const SizedBox(height: 4),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.chevron_left),
-                  onPressed: _previousPage,
-                ),
-                Text(
-                  'Page $_currentPage of $_totalPages',
-                  style: const TextStyle(fontWeight: FontWeight.w500),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.chevron_right),
-                  onPressed: _nextPage,
-                ),
-              ],
+            ),
+
+            // Page navigation
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.chevron_left),
+                    onPressed: _previousPage,
+                  ),
+                  Text(
+                    'Page $_currentPage of $_totalPages',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey[800],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.chevron_right),
+                    onPressed: _nextPage,
+                  ),
+                ],
+              ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildFormattingOptions(PdfEditorService editor) {
+    final bool isText =
+        editor.activeTool == EditType.text ||
+        editor.selectedItem is TextEditItem;
+    final bool isDraw =
+        editor.activeTool == EditType.drawing ||
+        editor.selectedItem is DrawingEditItem;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              // Colors
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children:
+                        [
+                              Colors.black,
+                              Colors.red,
+                              Colors.blue,
+                              Colors.green,
+                              Colors.orange,
+                              Colors.purple,
+                            ]
+                            .map(
+                              (c) => Padding(
+                                padding: const EdgeInsets.only(right: 8),
+                                child: GestureDetector(
+                                  onTap: () => editor.setColor(c),
+                                  child: Container(
+                                    width: 24,
+                                    height: 24,
+                                    decoration: BoxDecoration(
+                                      color: c,
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: editor.currentColor == c
+                                            ? Colors.indigo
+                                            : Colors.grey[300]!,
+                                        width: editor.currentColor == c ? 2 : 1,
+                                      ),
+                                    ),
+                                    child: editor.currentColor == c
+                                        ? Icon(
+                                            Icons.check,
+                                            size: 14,
+                                            color: c.computeLuminance() > 0.5
+                                                ? Colors.black
+                                                : Colors.white,
+                                          )
+                                        : null,
+                                  ),
+                                ),
+                              ),
+                            )
+                            .toList(),
+                  ),
+                ),
+              ),
+
+              if (isText) ...[
+                IconButton(
+                  icon: Icon(
+                    Icons.format_bold,
+                    color: editor.isBold ? Colors.indigo : Colors.grey,
+                  ),
+                  onPressed: editor.toggleBold,
+                  visualDensity: VisualDensity.compact,
+                ),
+                IconButton(
+                  icon: Icon(
+                    Icons.format_italic,
+                    color: editor.isItalic ? Colors.indigo : Colors.grey,
+                  ),
+                  onPressed: editor.toggleItalic,
+                  visualDensity: VisualDensity.compact,
+                ),
+              ],
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              if (isText) ...[
+                IconButton(
+                  icon: Icon(
+                    Icons.format_align_left,
+                    color: editor.textAlign == TextAlign.left
+                        ? Colors.indigo
+                        : Colors.grey,
+                  ),
+                  onPressed: () => editor.setTextAlign(TextAlign.left),
+                  visualDensity: VisualDensity.compact,
+                ),
+                IconButton(
+                  icon: Icon(
+                    Icons.format_align_center,
+                    color: editor.textAlign == TextAlign.center
+                        ? Colors.indigo
+                        : Colors.grey,
+                  ),
+                  onPressed: () => editor.setTextAlign(TextAlign.center),
+                  visualDensity: VisualDensity.compact,
+                ),
+                IconButton(
+                  icon: Icon(
+                    Icons.format_align_right,
+                    color: editor.textAlign == TextAlign.right
+                        ? Colors.indigo
+                        : Colors.grey,
+                  ),
+                  onPressed: () => editor.setTextAlign(TextAlign.right),
+                  visualDensity: VisualDensity.compact,
+                ),
+                const SizedBox(width: 8),
+                const Text('Size:'),
+                Expanded(
+                  child: Slider(
+                    value: editor.currentFontSize,
+                    min: 8,
+                    max: 48,
+                    onChanged: editor.setFontSize,
+                  ),
+                ),
+              ],
+              if (isDraw) ...[
+                const Icon(Icons.line_weight, size: 20),
+                const SizedBox(width: 8),
+                const Text('Width:'),
+                Expanded(
+                  child: Slider(
+                    value: editor.currentStrokeWidth,
+                    min: 1,
+                    max: 20,
+                    onChanged: editor.setStrokeWidth,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ],
       ),
     );
   }

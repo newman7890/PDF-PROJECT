@@ -131,6 +131,63 @@ class _TextEditorScreenState extends State<TextEditorScreen> {
     super.dispose();
   }
 
+  void _showColorPicker(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        final colors = [
+          Colors.black,
+          Colors.red[700]!,
+          Colors.blue[700]!,
+          Colors.green[700]!,
+          Colors.orange[700]!,
+          Colors.purple[700]!,
+          Colors.indigo[700]!,
+        ];
+        return Container(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Select Text Color',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 20),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: colors.map((color) {
+                  return GestureDetector(
+                    onTap: () {
+                      _controller.setTextColor(color);
+                      Navigator.pop(context);
+                    },
+                    child: Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: color,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.grey[300]!, width: 2),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 12),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -202,25 +259,34 @@ class _TextEditorScreenState extends State<TextEditorScreen> {
                       ],
                     ),
                     clipBehavior: Clip.antiAlias,
-                    child: TextField(
-                      controller: _controller,
-                      maxLines: null,
-                      expands: true,
-                      textAlignVertical: TextAlignVertical.top,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        height: 1.6,
-                        fontFamily: 'Roboto',
-                        color: Colors.black87,
-                      ),
-                      decoration: InputDecoration(
-                        border: InputBorder.none,
-                        hintText: 'Start typing or editing your document...',
-                        hintStyle: TextStyle(color: Colors.grey[400]),
-                        contentPadding: const EdgeInsets.all(20),
-                        fillColor: Colors.white,
-                        filled: true,
-                      ),
+                    child: Column(
+                      children: [
+                        _buildFormattingToolbar(),
+                        const Divider(height: 1),
+                        Expanded(
+                          child: TextField(
+                            controller: _controller,
+                            maxLines: null,
+                            expands: true,
+                            textAlignVertical: TextAlignVertical.top,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              height: 1.6,
+                              fontFamily: 'Roboto',
+                              color: Colors.black87,
+                            ),
+                            decoration: InputDecoration(
+                              border: InputBorder.none,
+                              hintText:
+                                  'Start typing or editing your document...',
+                              hintStyle: TextStyle(color: Colors.grey[400]),
+                              contentPadding: const EdgeInsets.all(20),
+                              fillColor: Colors.white,
+                              filled: true,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -266,6 +332,130 @@ class _TextEditorScreenState extends State<TextEditorScreen> {
                 ),
               ],
             ),
+    );
+  }
+
+  Widget _buildFormattingToolbar() {
+    return Container(
+      color: Colors.grey[100],
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            _ToolbarButton(
+              icon: Icons.undo,
+              onPressed: _controller.undo,
+              tooltip: 'Undo',
+            ),
+            _ToolbarButton(
+              icon: Icons.redo,
+              onPressed: _controller.redo,
+              tooltip: 'Redo',
+            ),
+            const VerticalDivider(width: 16),
+            _ToolbarButton(
+              icon: Icons.format_bold,
+              onPressed: _controller.toggleBold,
+              tooltip: 'Bold',
+            ),
+            _ToolbarButton(
+              icon: Icons.format_italic,
+              onPressed: _controller.toggleItalic,
+              tooltip: 'Italic',
+            ),
+            _ToolbarButton(
+              icon: Icons.format_underlined,
+              onPressed: _controller.toggleUnderline,
+              tooltip: 'Underline',
+            ),
+            _ToolbarButton(
+              icon: Icons.format_strikethrough,
+              onPressed: _controller.toggleStrikethrough,
+              tooltip: 'Strikethrough',
+            ),
+            const VerticalDivider(width: 16),
+            _ToolbarButton(
+              icon: Icons.format_align_left,
+              onPressed: () => _controller.setAlignment('left'),
+              tooltip: 'Align Left',
+            ),
+            _ToolbarButton(
+              icon: Icons.format_align_center,
+              onPressed: () => _controller.setAlignment('center'),
+              tooltip: 'Align Center',
+            ),
+            _ToolbarButton(
+              icon: Icons.format_align_right,
+              onPressed: () => _controller.setAlignment('right'),
+              tooltip: 'Align Right',
+            ),
+            const VerticalDivider(width: 16),
+            _ToolbarButton(
+              icon: Icons.format_list_bulleted,
+              onPressed: _controller.toggleBulletList,
+              tooltip: 'Bullet List',
+            ),
+            _ToolbarButton(
+              icon: Icons.format_list_numbered,
+              onPressed: _controller.toggleNumberedList,
+              tooltip: 'Numbered List',
+            ),
+            _ToolbarButton(
+              icon: Icons.horizontal_rule,
+              onPressed: _controller.insertHorizontalRule,
+              tooltip: 'Horizontal Rule',
+            ),
+            const VerticalDivider(width: 16),
+            _ToolbarButton(
+              icon: Icons.color_lens,
+              onPressed: () => _showColorPicker(context),
+              tooltip: 'Text Color',
+            ),
+            const VerticalDivider(width: 16),
+            _ToolbarButton(
+              text: 'H1',
+              onPressed: _controller.toggleH1,
+              tooltip: 'Heading 1',
+            ),
+            _ToolbarButton(
+              text: 'H2',
+              onPressed: _controller.toggleH2,
+              tooltip: 'Heading 2',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ToolbarButton extends StatelessWidget {
+  final IconData? icon;
+  final String? text;
+  final VoidCallback onPressed;
+  final String tooltip;
+
+  const _ToolbarButton({
+    this.icon,
+    this.text,
+    required this.onPressed,
+    required this.tooltip,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      icon: icon != null
+          ? Icon(icon, size: 20)
+          : Text(
+              text!,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+            ),
+      onPressed: onPressed,
+      tooltip: tooltip,
+      visualDensity: VisualDensity.compact,
+      color: Colors.indigo,
     );
   }
 }

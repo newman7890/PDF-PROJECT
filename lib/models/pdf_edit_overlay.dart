@@ -21,6 +21,9 @@ class TextEditItem extends PdfEditItem {
   double fontSize;
   Color color;
   double width;
+  bool isBold;
+  bool isItalic;
+  TextAlign textAlign;
 
   TextEditItem({
     required super.id,
@@ -30,6 +33,9 @@ class TextEditItem extends PdfEditItem {
     this.fontSize = 14.0,
     this.color = Colors.black,
     this.width = 150.0,
+    this.isBold = false,
+    this.isItalic = false,
+    this.textAlign = TextAlign.left,
   }) : super(type: EditType.text);
 }
 

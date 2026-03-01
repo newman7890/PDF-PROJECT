@@ -12,7 +12,6 @@ import '../models/scanned_document.dart';
 import '../widgets/document_card.dart';
 import 'scanner_screen.dart';
 import 'viewer_screen.dart' show PdfViewerScreen;
-import 'editor_screen.dart';
 import 'text_editor_screen.dart';
 import 'settings_screen.dart';
 
@@ -69,13 +68,6 @@ class _HomeScreenState extends State<HomeScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => PdfViewerScreen(document: doc)),
-    ).then((_) => _loadDocuments());
-  }
-
-  void _openEditor(ScannedDocument doc) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => EditorScreen(document: doc)),
     ).then((_) => _loadDocuments());
   }
 
@@ -426,7 +418,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       doc: doc,
                       onTap: () => _openDocument(doc),
                       onShare: () => _shareDocument(doc),
-                      onEdit: () => _openEditor(doc),
                       onEditAsText: () => _openTextEditor(doc),
                       onRename: () => _renameDocument(doc),
                       onDelete: () => _deleteDocument(doc),

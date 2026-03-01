@@ -9,7 +9,6 @@ class DocumentCard extends StatelessWidget {
   final VoidCallback onDelete;
   final VoidCallback onShare;
   final VoidCallback onRename;
-  final VoidCallback? onEdit;
   final VoidCallback? onEditAsText;
 
   const DocumentCard({
@@ -19,7 +18,6 @@ class DocumentCard extends StatelessWidget {
     required this.onDelete,
     required this.onShare,
     required this.onRename,
-    this.onEdit,
     this.onEditAsText,
   });
 
@@ -66,7 +64,6 @@ class DocumentCard extends StatelessWidget {
         trailing: PopupMenuButton<String>(
           onSelected: (value) {
             if (value == 'share') onShare();
-            if (value == 'edit' && onEdit != null) onEdit!();
             if (value == 'editText' && onEditAsText != null) onEditAsText!();
             if (value == 'rename') onRename();
             if (value == 'delete') onDelete();
@@ -79,16 +76,6 @@ class DocumentCard extends StatelessWidget {
                   Icon(Icons.share, size: 20),
                   SizedBox(width: 8),
                   Text('Share'),
-                ],
-              ),
-            ),
-            const PopupMenuItem(
-              value: 'edit',
-              child: Row(
-                children: [
-                  Icon(Icons.edit, size: 20),
-                  SizedBox(width: 8),
-                  Text('Direct Edit (Overlay)'),
                 ],
               ),
             ),
