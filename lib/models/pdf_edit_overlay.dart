@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-enum EditType { text, drawing, redact }
+enum EditType { text, drawing }
 
 abstract class PdfEditItem {
   final String id;
@@ -23,6 +23,10 @@ class TextEditItem extends PdfEditItem {
   double width;
   bool isBold;
   bool isItalic;
+  bool isUnderline;
+  bool isStrikethrough;
+  bool isH1;
+  bool isH2;
   TextAlign textAlign;
 
   TextEditItem({
@@ -35,6 +39,10 @@ class TextEditItem extends PdfEditItem {
     this.width = 150.0,
     this.isBold = false,
     this.isItalic = false,
+    this.isUnderline = false,
+    this.isStrikethrough = false,
+    this.isH1 = false,
+    this.isH2 = false,
     this.textAlign = TextAlign.left,
   }) : super(type: EditType.text);
 }

@@ -165,10 +165,49 @@ class _ScannerScreenState extends State<ScannerScreen> {
                   Text('Processing Clear Scan...'),
                 ],
               )
-            : ElevatedButton.icon(
-                onPressed: _startScan,
-                icon: const Icon(Icons.camera_alt),
-                label: const Text('Restart Scanner'),
+            : Padding(
+                padding: const EdgeInsets.all(32.0),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.camera_enhance_outlined,
+                      size: 80,
+                      color: Colors.indigo.withValues(alpha: 0.2),
+                    ),
+                    const SizedBox(height: 24),
+                    const Text(
+                      'Ready to Scan',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Position your document in the frame. We will automatically detect the edges and enhance the clarity for a professional finish.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.grey[600], fontSize: 16),
+                    ),
+                    const SizedBox(height: 32),
+                    ElevatedButton.icon(
+                      onPressed: _startScan,
+                      icon: const Icon(Icons.camera_alt),
+                      label: const Text('Start Scanning'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.indigo,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 32,
+                          vertical: 16,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(30),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
       ),
     );

@@ -7,6 +7,7 @@ import '../services/pdf_service.dart';
 import '../services/storage_service.dart';
 import '../services/ocr_service.dart';
 import '../services/rich_text_service.dart';
+import 'signature_pad_screen.dart';
 
 /// A screen that extracts the text from a PDF and lets the user edit it,
 /// then saves the result as a new PDF.
@@ -24,6 +25,7 @@ class _TextEditorScreenState extends State<TextEditorScreen> {
   bool _isLoading = true;
   bool _isSaving = false;
   String _statusMessage = 'Extracting text from PDF...';
+  List<Offset>? _signaturePoints; // Captured signature points
 
   @override
   void initState() {
@@ -93,6 +95,7 @@ class _TextEditorScreenState extends State<TextEditorScreen> {
         _controller.text,
         newPath,
         title: 'Edited_$baseName',
+        signaturePoints: _signaturePoints,
       );
 
       final newDoc = ScannedDocument(
@@ -129,63 +132,6 @@ class _TextEditorScreenState extends State<TextEditorScreen> {
   void dispose() {
     _controller.dispose();
     super.dispose();
-  }
-
-  void _showColorPicker(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) {
-        final colors = [
-          Colors.black,
-          Colors.red[700]!,
-          Colors.blue[700]!,
-          Colors.green[700]!,
-          Colors.orange[700]!,
-          Colors.purple[700]!,
-          Colors.indigo[700]!,
-        ];
-        return Container(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Select Text Color',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 20),
-              Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                children: colors.map((color) {
-                  return GestureDetector(
-                    onTap: () {
-                      _controller.setTextColor(color);
-                      Navigator.pop(context);
-                    },
-                    child: Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: color,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.grey[300]!, width: 2),
-                      ),
-                    ),
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 12),
-            ],
-          ),
-        );
-      },
-    );
   }
 
   @override
@@ -406,12 +352,7 @@ class _TextEditorScreenState extends State<TextEditorScreen> {
               onPressed: _controller.insertHorizontalRule,
               tooltip: 'Horizontal Rule',
             ),
-            const VerticalDivider(width: 16),
-            _ToolbarButton(
-              icon: Icons.color_lens,
-              onPressed: () => _showColorPicker(context),
-              tooltip: 'Text Color',
-            ),
+
             const VerticalDivider(width: 16),
             _ToolbarButton(
               text: 'H1',
@@ -422,6 +363,28 @@ class _TextEditorScreenState extends State<TextEditorScreen> {
               text: 'H2',
               onPressed: _controller.toggleH2,
               tooltip: 'Heading 2',
+            ),
+            const VerticalDivider(width: 16),
+            _ToolbarButton(
+              icon: Icons.gesture,
+              onPressed: () async {
+                final points = await Navigator.push<List<Offset>>(
+                  context,
+                  MaterialPageRoute(builder: (c) => const SignaturePadScreen()),
+                );
+                if (points != null && points.isNotEmpty && mounted) {
+                  setState(() => _signaturePoints = points);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        '✅ Signature captured! Tap "SAVE CHANGES" to embed it in the PDF.',
+                      ),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                }
+              },
+              tooltip: 'Add Signature',
             ),
           ],
         ),

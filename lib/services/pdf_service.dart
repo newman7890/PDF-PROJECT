@@ -66,20 +66,29 @@ class PDFService {
     required dynamic ocrService,
   }) async {
     try {
-      // 1. Try native extraction first (Fast & Clean)
       final blocks = await extractTextBlocksFromPdf(pdfPath);
       final nativeText = blocks.map((b) => b.text).join('\n').trim();
 
-      if (nativeText.isNotEmpty) return nativeText;
+      // Fallback to OCR if native text is mostly garbage/non-alphanumeric
+      bool isMeaningful = false;
+      if (nativeText.isNotEmpty) {
+        final alphaCount = nativeText
+            .replaceAll(RegExp(r'[^a-zA-Z0-9]'), '')
+            .length;
+        if (alphaCount > 15 ||
+            (nativeText.length < 30 && alphaCount > nativeText.length * 0.4)) {
+          isMeaningful = true;
+        }
+      }
 
-      // 2. Fallback to OCR if no native text is found (Scanned Docs)
+      if (isMeaningful) return nativeText;
       final pdfDocument = await dynamic_pdfx.PdfDocument.openFile(pdfPath);
       String ocrText = "";
 
       for (int i = 1; i <= pdfDocument.pagesCount; i++) {
         final page = await pdfDocument.getPage(i);
         final pageImage = await page.render(
-          width: page.width * 2, // Higher resolution for better OCR
+          width: page.width * 2,
           height: page.height * 2,
           format: dynamic_pdfx.PdfPageImageFormat.jpeg,
         );
@@ -105,74 +114,32 @@ class PDFService {
     }
   }
 
-  /// Checks if the PDF is primarily image-based (no native extractable text).
+  /// Checks if the PDF is primarily image-based.
   Future<bool> isImageBasedPdf(String pdfPath) async {
     try {
       final bytes = await File(pdfPath).readAsBytes();
       final PdfDocument document = PdfDocument(inputBytes: bytes);
-      final String text = PdfTextExtractor(document).extractText();
+      final String text = PdfTextExtractor(document).extractText().trim();
       document.dispose();
-      return text.trim().isEmpty;
+
+      if (text.isEmpty) return true;
+      final alphaCount = text.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').length;
+      return alphaCount <= 15 && alphaCount <= text.length * 0.4;
     } catch (e) {
-      return true; // Assume image-based on error
+      return true;
     }
   }
 
-  /// Creates a new PDF from plain text content (supporting basic Markdown-like styling).
+  /// Creates a new PDF with mixed styling support.
   Future<File> saveTextAsPdf(
     String text,
     String outputPath, {
     String title = 'Edited Document',
+    List<Offset>? signaturePoints,
   }) async {
     final PdfDocument document = PdfDocument();
 
-    // Page setup
     const double margin = 40.0;
-    const double lineHeightNormal = 18.0;
-    const double fontSizeNormal = 12.0;
-    const double fontSizeH1 = 20.0;
-    const double fontSizeH2 = 16.0;
-
-    final PdfFont fontNormal = PdfStandardFont(
-      PdfFontFamily.helvetica,
-      fontSizeNormal,
-    );
-    final PdfFont fontBold = PdfStandardFont(
-      PdfFontFamily.helvetica,
-      fontSizeNormal,
-      style: PdfFontStyle.bold,
-    );
-    final PdfFont fontItalic = PdfStandardFont(
-      PdfFontFamily.helvetica,
-      fontSizeNormal,
-      style: PdfFontStyle.italic,
-    );
-    final PdfFont fontUnderline = PdfStandardFont(
-      PdfFontFamily.helvetica,
-      fontSizeNormal,
-      style: PdfFontStyle.underline,
-    );
-    final PdfFont fontStrike = PdfStandardFont(
-      PdfFontFamily.helvetica,
-      fontSizeNormal,
-      style: PdfFontStyle.strikethrough,
-    );
-    final PdfFont fontH1 = PdfStandardFont(
-      PdfFontFamily.helvetica,
-      fontSizeH1,
-      style: PdfFontStyle.bold,
-    );
-    final PdfFont fontH2 = PdfStandardFont(
-      PdfFontFamily.helvetica,
-      fontSizeH2,
-      style: PdfFontStyle.bold,
-    );
-
-    final PdfBrush blackBrush = PdfSolidBrush(PdfColor(0, 0, 0));
-    final PdfBrush indigoBrush = PdfSolidBrush(PdfColor(63, 81, 181));
-
-    // Split text into lines
-    final List<String> rawLines = text.split('\n');
 
     PdfPage page = document.pages.add();
     double y = margin;
@@ -180,125 +147,237 @@ class PDFService {
     final double pageHeight = page.getClientSize().height;
     final double usableWidth = pageWidth - margin * 2;
 
+    final List<String> rawLines = text.split('\n');
+
     for (final rawLine in rawLines) {
-      PdfFont currentFont = fontNormal;
-      PdfBrush currentBrush = blackBrush;
-      double currentLineHeight = lineHeightNormal;
-      PdfTextAlignment currentAlignment = PdfTextAlignment.left;
-      String lineToDraw = rawLine;
-
-      // 1. Check for Headings
-      if (rawLine.startsWith('# ')) {
-        currentFont = fontH1;
-        currentBrush = indigoBrush;
-        currentLineHeight = 28.0;
-        lineToDraw = rawLine.substring(2);
-      } else if (rawLine.startsWith('## ')) {
-        currentFont = fontH2;
-        currentBrush = indigoBrush;
-        currentLineHeight = 24.0;
-        lineToDraw = rawLine.substring(3);
-      }
-      // 2. Check for Alignment markers
-      if (rawLine.startsWith('[:center:]')) {
-        currentAlignment = PdfTextAlignment.center;
-        lineToDraw = rawLine.substring(10);
-      } else if (rawLine.startsWith('[:right:]')) {
-        currentAlignment = PdfTextAlignment.right;
-        lineToDraw = rawLine.substring(9);
-      } else if (rawLine.startsWith('[:left:]')) {
-        currentAlignment = PdfTextAlignment.left;
-        lineToDraw = rawLine.substring(8);
+      if (rawLine.isEmpty) {
+        y += 10.0;
+        continue;
       }
 
-      // 3. Check for Bullet/Numbered List & Horizontal Rule
-      if (lineToDraw.startsWith('---')) {
-        // Draw horizontal rule
+      // Handle Horizontal Rule
+      if (rawLine.trim() == '---') {
         page.graphics.drawLine(
           PdfPen(PdfColor(200, 200, 200), width: 1),
-          Offset(margin, y + 8),
-          Offset(pageWidth - margin, y + 8),
+          Offset(margin, y + 5),
+          Offset(pageWidth - margin, y + 5),
         );
-        y += 20.0;
-        continue; // Don't draw text for HR line
+        y += 15.0;
+        continue;
       }
 
-      if (lineToDraw.startsWith('- ')) {
-        lineToDraw = '• ${lineToDraw.substring(2)}';
-      } else if (RegExp(r'^\d+\. ').hasMatch(lineToDraw)) {
-        // It's a numbered list, we keep it as is but could style it
-        currentBrush = PdfSolidBrush(
-          PdfColor(63, 81, 181),
-        ); // indigo for list markers
-      }
+      // Parse line into styled chunks
+      final chunks = _parseStyledLine(rawLine);
 
-      // 4. Check for Color marker
-      if (lineToDraw.startsWith('[:color:')) {
-        final hexMatch = RegExp(
-          r'\[:color:#[0-9a-fA-F]{6}:\]',
-        ).firstMatch(lineToDraw);
-        if (hexMatch != null) {
-          final hex = hexMatch.group(0)!.substring(8, 15);
-          try {
-            final r = int.parse(hex.substring(1, 3), radix: 16);
-            final g = int.parse(hex.substring(3, 5), radix: 16);
-            final b = int.parse(hex.substring(5, 7), radix: 16);
-            currentBrush = PdfSolidBrush(PdfColor(r, g, b));
-          } catch (_) {}
-          lineToDraw = lineToDraw.replaceFirst(hexMatch.group(0)!, '');
+      // We need to wrap these chunks if they exceed usableWidth
+      // This is a simplified wrap: we draw line by line
+      double x = margin;
+      double maxLineHeight = 18.0;
+
+      for (var chunk in chunks) {
+        final font = PdfStandardFont(
+          PdfFontFamily.helvetica,
+          chunk.fontSize,
+          style: chunk.style,
+        );
+
+        // Split chunk text if it's too wide for the REMAINING width
+        final wrapped = _wrapLine(chunk.text, font, usableWidth - (x - margin));
+
+        for (int i = 0; i < wrapped.length; i++) {
+          final wText = wrapped[i];
+          final size = font.measureString(wText);
+
+          if (x + size.width > pageWidth - margin && i == 0) {
+            // New line if first part doesn't fit
+            y += maxLineHeight;
+            x = margin;
+            if (y > pageHeight - margin) {
+              page = document.pages.add();
+              y = margin;
+            }
+          }
+
+          page.graphics.drawString(
+            wText,
+            font,
+            brush: PdfSolidBrush(chunk.color),
+            bounds: Rect.fromLTWH(x, y, size.width + 2, 30),
+          );
+
+          if (chunk.isUnderline) {
+            page.graphics.drawLine(
+              PdfPen(chunk.color, width: 0.8),
+              Offset(x, y + chunk.fontSize * 0.95),
+              Offset(x + size.width, y + chunk.fontSize * 0.95),
+            );
+          }
+          if (chunk.isStrike) {
+            page.graphics.drawLine(
+              PdfPen(chunk.color, width: 0.8),
+              Offset(x, y + chunk.fontSize * 0.5),
+              Offset(x + size.width, y + chunk.fontSize * 0.5),
+            );
+          }
+
+          if (i < wrapped.length - 1) {
+            // Chunk was wrapped, move to next line
+            y += maxLineHeight;
+            x = margin;
+            if (y > pageHeight - margin) {
+              page = document.pages.add();
+              y = margin;
+            }
+          } else {
+            x += size.width;
+          }
+        }
+        if (chunk.fontSize > maxLineHeight) {
+          maxLineHeight = chunk.fontSize * 1.4;
         }
       }
+      y += maxLineHeight;
 
-      // 5. Line-level styles (Simple parser)
-      if (lineToDraw.startsWith('**') && lineToDraw.endsWith('**')) {
-        currentFont = fontBold;
-        lineToDraw = lineToDraw.substring(2, lineToDraw.length - 2);
-      } else if (lineToDraw.startsWith('*') && lineToDraw.endsWith('*')) {
-        currentFont = fontItalic;
-        lineToDraw = lineToDraw.substring(1, lineToDraw.length - 1);
-      } else if (lineToDraw.startsWith('__') && lineToDraw.endsWith('__')) {
-        currentFont = fontUnderline;
-        lineToDraw = lineToDraw.substring(2, lineToDraw.length - 2);
-      } else if (lineToDraw.startsWith('~~') && lineToDraw.endsWith('~~')) {
-        currentFont = fontStrike;
-        lineToDraw = lineToDraw.substring(2, lineToDraw.length - 2);
+      if (y > pageHeight - margin) {
+        page = document.pages.add();
+        y = margin;
+      }
+    }
+
+    // Render signature at the bottom of the last page if provided
+    if (signaturePoints != null && signaturePoints.isNotEmpty) {
+      const double sigBoxWidth = 180.0;
+      const double sigBoxHeight = 60.0;
+      final double sigX = margin;
+      double sigY = y + 20;
+
+      // Add a new page if signature won't fit
+      if (sigY + sigBoxHeight + 30 > pageHeight - margin) {
+        page = document.pages.add();
+        sigY = margin;
       }
 
-      // 6. Strip any surviving inline markdown markers for a clean PDF
-      lineToDraw = lineToDraw
-          .replaceAll('**', '')
-          .replaceAll('*', '')
-          .replaceAll('__', '')
-          .replaceAll('~~', '')
-          .replaceAll('[:left:]', '')
-          .replaceAll('[:center:]', '')
-          .replaceAll('[:right:]', '');
+      // Label
+      final sigLabelFont = PdfStandardFont(PdfFontFamily.helvetica, 10);
+      page.graphics.drawString(
+        'Signature:',
+        sigLabelFont,
+        brush: PdfSolidBrush(PdfColor(100, 100, 100)),
+        bounds: Rect.fromLTWH(sigX, sigY, 100, 14),
+      );
+      sigY += 16;
 
-      // Also strip color markers if any remain
-      lineToDraw = lineToDraw.replaceAll(
-        RegExp(r'\[:color:#[0-9a-fA-F]{6}:\]'),
-        '',
+      // Signature border box
+      page.graphics.drawRectangle(
+        pen: PdfPen(PdfColor(200, 200, 200)),
+        bounds: Rect.fromLTWH(sigX, sigY, sigBoxWidth, sigBoxHeight),
       );
 
-      // Word-wrap helper
-      final wrappedLines = _wrapLine(lineToDraw, currentFont, usableWidth);
-
-      for (final wLine in wrappedLines) {
-        if (y + currentLineHeight > pageHeight - margin) {
-          page = document.pages.add();
-          y = margin;
-        }
-
-        page.graphics.drawString(
-          wLine,
-          currentFont,
-          brush: currentBrush,
-          bounds: Rect.fromLTWH(margin, y, usableWidth, currentLineHeight),
-          format: PdfStringFormat(alignment: currentAlignment),
-        );
-        y += currentLineHeight;
+      // Normalise and draw signature strokes inside the box
+      double minX = signaturePoints[0].dx;
+      double minY = signaturePoints[0].dy;
+      double maxX = signaturePoints[0].dx;
+      double maxY = signaturePoints[0].dy;
+      for (final p in signaturePoints) {
+        if (p.dx < minX) minX = p.dx;
+        if (p.dy < minY) minY = p.dy;
+        if (p.dx > maxX) maxX = p.dx;
+        if (p.dy > maxY) maxY = p.dy;
       }
-      if (rawLine.isEmpty) y += lineHeightNormal * 0.4;
+      final double srcW = (maxX - minX) == 0 ? 1 : (maxX - minX);
+      final double srcH = (maxY - minY) == 0 ? 1 : (maxY - minY);
+
+      final sigPen = PdfPen(PdfColor(0, 0, 0), width: 2.5);
+      sigPen.lineCap = PdfLineCap.round;
+      const double pad = 6.0;
+
+      Offset normSig(Offset raw) => Offset(
+        sigX + pad + (raw.dx - minX) / srcW * (sigBoxWidth - pad * 2),
+        sigY + pad + (raw.dy - minY) / srcH * (sigBoxHeight - pad * 2),
+      );
+
+      for (int i = 0; i < signaturePoints.length - 1; i++) {
+        page.graphics.drawLine(
+          sigPen,
+          normSig(signaturePoints[i]),
+          normSig(signaturePoints[i + 1]),
+        );
+      }
+
+      // Underline
+      page.graphics.drawLine(
+        PdfPen(PdfColor(150, 150, 150)),
+        Offset(sigX, sigY + sigBoxHeight + 4),
+        Offset(sigX + sigBoxWidth, sigY + sigBoxHeight + 4),
+      );
+    }
+
+    // Render signature at the bottom of the last page if provided
+    if (signaturePoints != null && signaturePoints.isNotEmpty) {
+      const double sigBoxWidth = 180.0;
+      const double sigBoxHeight = 60.0;
+      final double sigX = margin;
+      double sigY = y + 20;
+
+      // Add a new page if signature won't fit
+      if (sigY + sigBoxHeight + 30 > pageHeight - margin) {
+        page = document.pages.add();
+        sigY = margin;
+      }
+
+      // Label
+      final sigLabelFont = PdfStandardFont(PdfFontFamily.helvetica, 10);
+      page.graphics.drawString(
+        'Signature:',
+        sigLabelFont,
+        brush: PdfSolidBrush(PdfColor(100, 100, 100)),
+        bounds: Rect.fromLTWH(sigX, sigY, 100, 14),
+      );
+      sigY += 16;
+
+      // Signature border box
+      page.graphics.drawRectangle(
+        pen: PdfPen(PdfColor(200, 200, 200)),
+        bounds: Rect.fromLTWH(sigX, sigY, sigBoxWidth, sigBoxHeight),
+      );
+
+      // Normalise and draw signature strokes inside the box
+      double minX = signaturePoints[0].dx;
+      double minY = signaturePoints[0].dy;
+      double maxX = signaturePoints[0].dx;
+      double maxY = signaturePoints[0].dy;
+      for (final p in signaturePoints) {
+        if (p.dx < minX) minX = p.dx;
+        if (p.dy < minY) minY = p.dy;
+        if (p.dx > maxX) maxX = p.dx;
+        if (p.dy > maxY) maxY = p.dy;
+      }
+      final double srcW = (maxX - minX) == 0 ? 1 : (maxX - minX);
+      final double srcH = (maxY - minY) == 0 ? 1 : (maxY - minY);
+
+      final sigPen = PdfPen(PdfColor(0, 0, 0), width: 2.5);
+      sigPen.lineCap = PdfLineCap.round;
+      const double pad = 6.0;
+
+      Offset normSig(Offset raw) => Offset(
+        sigX + pad + (raw.dx - minX) / srcW * (sigBoxWidth - pad * 2),
+        sigY + pad + (raw.dy - minY) / srcH * (sigBoxHeight - pad * 2),
+      );
+
+      for (int i = 0; i < signaturePoints.length - 1; i++) {
+        page.graphics.drawLine(
+          sigPen,
+          normSig(signaturePoints[i]),
+          normSig(signaturePoints[i + 1]),
+        );
+      }
+
+      // Underline
+      page.graphics.drawLine(
+        PdfPen(PdfColor(150, 150, 150)),
+        Offset(sigX, sigY + sigBoxHeight + 4),
+        Offset(sigX + sigBoxWidth, sigY + sigBoxHeight + 4),
+      );
     }
 
     final List<int> bytes = await document.save();
@@ -309,7 +388,140 @@ class PDFService {
     return file;
   }
 
-  /// Simple word-wrap helper — breaks a line into segments that fit [maxWidth].
+  List<StyledChunk> _parseStyledLine(String line) {
+    final List<StyledChunk> chunks = [];
+    final regExp = RegExp(
+      r'(\*\*.*?\*\*)|(\*.*?\*)|(__.*?__)|(~~.*?~~)|(\[H1\].*?\[/H1\])|(\[H2\].*?\[/H2\])|(\[H3\].*?\[/H3\])|(^- .*?$|^- .*?\n)|(^\d+\. .*?$|^\d+\. .*?\n)|(\[:color:#[0-9a-fA-F]{6}:\])',
+    );
+
+    int lastMatchEnd = 0;
+    PdfColor currentColor = PdfColor(0, 0, 0);
+
+    for (var match in regExp.allMatches(line)) {
+      // Add plain text before match
+      if (match.start > lastMatchEnd) {
+        chunks.add(
+          StyledChunk(
+            text: line.substring(lastMatchEnd, match.start),
+            color: currentColor,
+          ),
+        );
+      }
+
+      final mText = match.group(0)!;
+      if (mText.startsWith('[:color:')) {
+        final hex = mText.substring(8, 15);
+        try {
+          final r = int.parse(hex.substring(1, 3), radix: 16);
+          final g = int.parse(hex.substring(3, 5), radix: 16);
+          final b = int.parse(hex.substring(5, 7), radix: 16);
+          currentColor = PdfColor(r, g, b);
+        } catch (_) {}
+      } else if (mText.startsWith('**')) {
+        chunks.add(
+          StyledChunk(
+            text: mText.substring(2, mText.length - 2),
+            style: PdfFontStyle.bold,
+            color: currentColor,
+          ),
+        );
+      } else if (mText.startsWith('*')) {
+        chunks.add(
+          StyledChunk(
+            text: mText.substring(1, mText.length - 1),
+            style: PdfFontStyle.italic,
+            color: currentColor,
+          ),
+        );
+      } else if (mText.startsWith('__')) {
+        chunks.add(
+          StyledChunk(
+            text: mText.substring(2, mText.length - 2),
+            isUnderline: true,
+            color: currentColor,
+          ),
+        );
+      } else if (mText.startsWith('~~')) {
+        chunks.add(
+          StyledChunk(
+            text: mText.substring(2, mText.length - 2),
+            isStrike: true,
+            color: currentColor,
+          ),
+        );
+      } else if (mText.startsWith('[H1]')) {
+        chunks.add(
+          StyledChunk(
+            text: mText.substring(4, mText.length - 5),
+            style: PdfFontStyle.bold,
+            fontSize: 22,
+            color: currentColor,
+          ),
+        );
+      } else if (mText.startsWith('- ') || RegExp(r'^\d+\. ').hasMatch(mText)) {
+        // Auto-bold lists
+        chunks.add(
+          StyledChunk(
+            text: mText.trim(),
+            style: PdfFontStyle.bold,
+            color: currentColor,
+          ),
+        );
+      } else if (mText.startsWith('[H2]')) {
+        chunks.add(
+          StyledChunk(
+            text: mText.substring(4, mText.length - 5),
+            style: PdfFontStyle.bold,
+            fontSize: 18,
+            color: currentColor,
+          ),
+        );
+      } else if (mText.startsWith('[H3]')) {
+        chunks.add(
+          StyledChunk(
+            text: mText.substring(4, mText.length - 5),
+            style: PdfFontStyle.bold,
+            fontSize: 14,
+            color: currentColor,
+          ),
+        );
+      }
+
+      lastMatchEnd = match.end;
+    }
+
+    // Add remaining plain text
+    if (lastMatchEnd < line.length) {
+      chunks.add(
+        StyledChunk(text: line.substring(lastMatchEnd), color: currentColor),
+      );
+    }
+
+    return chunks;
+  }
+
+  String _cleanFormatting(String text) {
+    if (text.isEmpty) return "";
+    return text
+        .replaceAllMapped(
+          RegExp(r'\[H\d\].*?\[/H\d\]'),
+          (m) => m.group(0)!.substring(4, m.group(0)!.length - 5),
+        )
+        .replaceAll('***', '')
+        .replaceAll('**', '')
+        .replaceAll('*', '')
+        .replaceAll('___', '')
+        .replaceAll('__', '')
+        .replaceAll('_', '')
+        .replaceAll('~~~', '')
+        .replaceAll('~~', '')
+        .replaceAll('~', '')
+        .replaceAll(RegExp(r'\[/H\d\]'), '')
+        .replaceAll(RegExp(r'\[H\d\]'), '')
+        .replaceAll(RegExp(r'\[:.*?:\]'), '')
+        .trim();
+  }
+
   List<String> _wrapLine(String line, PdfFont font, double maxWidth) {
     if (line.isEmpty) return [''];
     final words = line.split(' ');
@@ -339,8 +551,6 @@ class PDFService {
     final PdfDocument document = PdfDocument(inputBytes: bytes);
 
     for (final entry in edits.entries) {
-      // Syncfusion uses 0-based indexing for pages, but our UI usually uses 1-based.
-      // Assuming our UI pageIndex is 1-based (like PDFx). Adjust if needed.
       final int pdfPageIndex = entry.key - 1;
 
       if (pdfPageIndex >= 0 && pdfPageIndex < document.pages.count) {
@@ -349,79 +559,78 @@ class PDFService {
 
         for (final edit in entry.value) {
           if (edit is TextEditItem) {
+            final String cleanText = _cleanFormatting(edit.text);
+
             PdfFontStyle fontStyle = PdfFontStyle.regular;
-            if (edit.isBold && edit.isItalic) {
-              // Combining styles with | is common in bitmask enums/classes
-              try {
-                fontStyle = edit.isBold && edit.isItalic
-                    ? PdfFontStyle.bold
-                    : PdfFontStyle.regular;
-                // Since I can't easily verify the bitmask, I'll fallback to bold if both are true for now,
-                // OR try to use the bitwise OR if I'm sure it's a bitmask.
-                // Re-reading search: "you can use the bitwise OR operator (|)"
-                // Let's try it.
-                // But wait, the previous code had boldItalic which failed.
-                // Let's try to just use bold and italic flags to choose the style if they are individual constants.
-              } catch (e) {
-                fontStyle = PdfFontStyle.bold;
-              }
-            } else if (edit.isBold) {
+            if (edit.isBold || edit.isH1 || edit.isH2) {
               fontStyle = PdfFontStyle.bold;
-            } else if (edit.isItalic) {
+            }
+            if (edit.isItalic && fontStyle != PdfFontStyle.bold) {
               fontStyle = PdfFontStyle.italic;
+            }
+
+            double pdfFontSize = edit.fontSize * 1.5;
+            if (edit.isH1) {
+              pdfFontSize *= 1.8;
+            } else if (edit.isH2) {
+              pdfFontSize *= 1.4;
             }
 
             final PdfFont font = PdfStandardFont(
               PdfFontFamily.helvetica,
-              edit.fontSize * 1.5, // Scaling factor adjustment
+              pdfFontSize,
               style: fontStyle,
             );
-            final PdfBrush brush = PdfSolidBrush(
-              PdfColor(
-                edit.color.r.toInt(),
-                edit.color.g.toInt(),
-                edit.color.b.toInt(),
-                edit.color.a.toInt(),
-              ),
-            );
 
-            PdfTextAlignment alignment = PdfTextAlignment.left;
-            switch (edit.textAlign) {
-              case TextAlign.center:
-                alignment = PdfTextAlignment.center;
-                break;
-              case TextAlign.right:
-                alignment = PdfTextAlignment.right;
-                break;
-              default:
-                alignment = PdfTextAlignment.left;
-            }
+            final PdfColor color = PdfColor(
+              (edit.color.r * 255).round().clamp(0, 255),
+              (edit.color.g * 255).round().clamp(0, 255),
+              (edit.color.b * 255).round().clamp(0, 255),
+              (edit.color.a * 255).round().clamp(0, 255),
+            );
 
             final double px = edit.position.dx * page.getClientSize().width;
             final double py = edit.position.dy * page.getClientSize().height;
 
             graphics.drawString(
-              edit.text,
+              cleanText,
               font,
-              brush: brush,
+              brush: PdfSolidBrush(color),
               bounds: Rect.fromLTWH(
                 px,
                 py,
-                page.getClientSize().width - px,
-                page.getClientSize().height - py,
-              ),
-              format: PdfStringFormat(
-                wordWrap: PdfWordWrapType.word,
-                alignment: alignment,
-              ),
+                1000,
+                1000,
+              ), // Large bounds for simplicity
             );
+
+            if (edit.isUnderline) {
+              graphics.drawLine(
+                PdfPen(color, width: 0.8),
+                Offset(px, py + pdfFontSize * 0.95),
+                Offset(
+                  px + font.measureString(cleanText).width,
+                  py + pdfFontSize * 0.95,
+                ),
+              );
+            }
+            if (edit.isStrikethrough) {
+              graphics.drawLine(
+                PdfPen(color, width: 0.8),
+                Offset(px, py + pdfFontSize * 0.5),
+                Offset(
+                  px + font.measureString(cleanText).width,
+                  py + pdfFontSize * 0.5,
+                ),
+              );
+            }
           } else if (edit is DrawingEditItem && edit.points.isNotEmpty) {
             final PdfPen pen = PdfPen(
               PdfColor(
-                edit.color.r.toInt(),
-                edit.color.g.toInt(),
-                edit.color.b.toInt(),
-                edit.color.a.toInt(),
+                (edit.color.r * 255).round().clamp(0, 255),
+                (edit.color.g * 255).round().clamp(0, 255),
+                (edit.color.b * 255).round().clamp(0, 255),
+                (edit.color.a * 255).round().clamp(0, 255),
               ),
               width: edit.strokeWidth,
             );
@@ -452,11 +661,28 @@ class PDFService {
   }
 }
 
+class StyledChunk {
+  final String text;
+  final PdfFontStyle style;
+  final double fontSize;
+  final PdfColor color;
+  final bool isUnderline;
+  final bool isStrike;
+
+  StyledChunk({
+    required this.text,
+    this.style = PdfFontStyle.regular,
+    this.fontSize = 12.0,
+    required this.color,
+    this.isUnderline = false,
+    this.isStrike = false,
+  });
+}
+
 class PdfTextBlock {
   final String text;
   final Rect bounds;
   final int pageIndex;
-
   PdfTextBlock({
     required this.text,
     required this.bounds,

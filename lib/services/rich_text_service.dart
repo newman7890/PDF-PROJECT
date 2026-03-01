@@ -62,32 +62,34 @@ class StyledTextController extends TextEditingController {
     TextStyle? style,
     required bool withComposing,
   }) {
-    final List<InlineSpan> children = [];
+    return _buildSpanRecursive(text, style);
+  }
 
-    // Improved regex: removes the forced trailing newline for headings
-    // so they highlight as soon as the user types '# '
+  TextSpan _buildSpanRecursive(String text, TextStyle? style) {
+    if (text.isEmpty) return TextSpan(style: style);
+
+    final List<InlineSpan> children = [];
+    final markerStyle = style?.copyWith(
+      color: Colors.transparent,
+      fontSize: 0,
+      letterSpacing: -1, // Collapse spacing for invisible markers
+    );
+
     text.splitMapJoin(
       RegExp(
-        r'(\*\*.*?\*\*)|(\*.*?\*)|(__.*?__)|(~~.*?~~)|(^# .*?$|^# .*?\n)|(^## .*?$|^## .*?\n)|(^- .*?$|^- .*?\n)|(^\d+\. .*?$|^\d+\. .*?\n)|(^---$|^---\n)|(\[:color:#[0-9a-fA-F]{6}:\])|(\[:.*?:\])|(\[.*?\]\(.*?\))',
+        r'(\*\*.*?\*\*)|(\*.*?\*)|(__.*?__)|(~~.*?~~)|(\[H1\].*?\[/H1\])|(\[H2\].*?\[/H2\])|(\[H3\].*?\[/H3\])|(^- .*?$|^- .*?\n)|(^\d+\. .*?$|^\d+\. .*?\n)|(^---$|^---\n)|(\[:.*?:\])',
         multiLine: true,
       ),
       onMatch: (m) {
         final match = m.group(0)!;
-        final markerStyle = style?.copyWith(
-          color: Colors.transparent,
-          fontSize: 0.1,
-        );
 
         if (match.startsWith('**')) {
           final content = match.substring(2, match.length - 2);
           children.add(TextSpan(text: '**', style: markerStyle));
           children.add(
-            TextSpan(
-              text: content,
-              style: style?.copyWith(
-                fontWeight: FontWeight.bold,
-                color: Colors.indigo,
-              ),
+            _buildSpanRecursive(
+              content,
+              style?.copyWith(fontWeight: FontWeight.bold, color: Colors.black),
             ),
           );
           children.add(TextSpan(text: '**', style: markerStyle));
@@ -95,12 +97,9 @@ class StyledTextController extends TextEditingController {
           final content = match.substring(1, match.length - 1);
           children.add(TextSpan(text: '*', style: markerStyle));
           children.add(
-            TextSpan(
-              text: content,
-              style: style?.copyWith(
-                fontStyle: FontStyle.italic,
-                color: Colors.teal,
-              ),
+            _buildSpanRecursive(
+              content,
+              style?.copyWith(fontStyle: FontStyle.italic, color: Colors.black),
             ),
           );
           children.add(TextSpan(text: '*', style: markerStyle));
@@ -108,11 +107,11 @@ class StyledTextController extends TextEditingController {
           final content = match.substring(2, match.length - 2);
           children.add(TextSpan(text: '__', style: markerStyle));
           children.add(
-            TextSpan(
-              text: content,
-              style: style?.copyWith(
+            _buildSpanRecursive(
+              content,
+              style?.copyWith(
                 decoration: TextDecoration.underline,
-                color: Colors.blue,
+                color: Colors.black,
               ),
             ),
           );
@@ -121,40 +120,82 @@ class StyledTextController extends TextEditingController {
           final content = match.substring(2, match.length - 2);
           children.add(TextSpan(text: '~~', style: markerStyle));
           children.add(
-            TextSpan(
-              text: content,
-              style: style?.copyWith(
+            _buildSpanRecursive(
+              content,
+              style?.copyWith(
                 decoration: TextDecoration.lineThrough,
-                color: Colors.redAccent,
+                color: Colors.black,
               ),
             ),
           );
           children.add(TextSpan(text: '~~', style: markerStyle));
+        } else if (match.startsWith('[H1]')) {
+          final content = match.substring(4, match.length - 5);
+          children.add(TextSpan(text: '[H1]', style: markerStyle));
+          children.add(
+            _buildSpanRecursive(
+              content,
+              style?.copyWith(
+                fontWeight: FontWeight.bold,
+                fontSize: 22,
+                color: Colors.black,
+              ),
+            ),
+          );
+          children.add(TextSpan(text: '[/H1]', style: markerStyle));
+        } else if (match.startsWith('[H2]')) {
+          final content = match.substring(4, match.length - 5);
+          children.add(TextSpan(text: '[H2]', style: markerStyle));
+          children.add(
+            _buildSpanRecursive(
+              content,
+              style?.copyWith(
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+                color: Colors.black,
+              ),
+            ),
+          );
+          children.add(TextSpan(text: '[/H2]', style: markerStyle));
+        } else if (match.startsWith('[H3]')) {
+          final content = match.substring(4, match.length - 5);
+          children.add(TextSpan(text: '[H3]', style: markerStyle));
+          children.add(
+            _buildSpanRecursive(
+              content,
+              style?.copyWith(
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+                color: Colors.black,
+              ),
+            ),
+          );
+          children.add(TextSpan(text: '[/H3]', style: markerStyle));
         } else if (match.startsWith('- ')) {
           children.add(
             TextSpan(
               text: '• ',
               style: style?.copyWith(
-                color: Colors.indigo,
+                color: Colors.black,
                 fontWeight: FontWeight.bold,
               ),
             ),
           );
-          children.add(TextSpan(text: match.substring(2), style: style));
+          children.add(_buildSpanRecursive(match.substring(2), style));
         } else if (RegExp(r'^\d+\. ').hasMatch(match)) {
           final dotIndex = match.indexOf('. ');
-          final number = match.substring(0, dotIndex + 1);
+          final number = match.substring(0, dotIndex + 2);
           children.add(
             TextSpan(
               text: number,
               style: style?.copyWith(
-                color: Colors.indigo,
+                color: Colors.black,
                 fontWeight: FontWeight.bold,
               ),
             ),
           );
           children.add(
-            TextSpan(text: match.substring(dotIndex + 1), style: style),
+            _buildSpanRecursive(match.substring(dotIndex + 2), style),
           );
         } else if (match.startsWith('---')) {
           children.add(
@@ -169,16 +210,10 @@ class StyledTextController extends TextEditingController {
           );
           children.add(TextSpan(text: match, style: markerStyle));
         } else if (match.startsWith('[:color:')) {
-          // [:color:#RRGGBB:]
           final hexColor = match.substring(8, 15);
           try {
             final color = Color(int.parse(hexColor.replaceFirst('#', '0xFF')));
-            // Find the rest of the line to apply the color to
-            // Note: Inline colors apply to the immediate next segment in this simple model
             children.add(TextSpan(text: match, style: markerStyle));
-            // We'll return and let splitMapJoin handle the next segment or manually handle it if needed
-            // For now, this marker just stores the state for the PDF service
-            // and we style it slightly in the editor as a hint
             children.add(
               TextSpan(
                 text: ' ● ',
@@ -188,30 +223,6 @@ class StyledTextController extends TextEditingController {
           } catch (_) {
             children.add(TextSpan(text: match, style: style));
           }
-        } else if (match.startsWith('##')) {
-          children.add(TextSpan(text: '## ', style: markerStyle));
-          children.add(
-            TextSpan(
-              text: match.substring(3).trim(),
-              style: style?.copyWith(
-                fontWeight: FontWeight.bold,
-                fontSize: 18,
-                color: Colors.indigoAccent,
-              ),
-            ),
-          );
-        } else if (match.startsWith('#')) {
-          children.add(TextSpan(text: '# ', style: markerStyle));
-          children.add(
-            TextSpan(
-              text: match.substring(2).trim(),
-              style: style?.copyWith(
-                fontWeight: FontWeight.bold,
-                fontSize: 22,
-                color: Colors.deepPurple,
-              ),
-            ),
-          );
         } else if (match.startsWith('[:')) {
           children.add(TextSpan(text: match, style: markerStyle));
         } else if (match.startsWith('[')) {
@@ -290,11 +301,15 @@ class StyledTextController extends TextEditingController {
   }
 
   void toggleH1() {
-    _toggleLineStart('# ', replaceOthers: ['## ']);
+    _wrapSelection('[H1]', '[/H1]');
   }
 
   void toggleH2() {
-    _toggleLineStart('## ', replaceOthers: ['# ']);
+    _wrapSelection('[H2]', '[/H2]');
+  }
+
+  void toggleH3() {
+    _wrapSelection('[H3]', '[/H3]');
   }
 
   void _wrapSelection(String prefix, String suffix) {
@@ -387,9 +402,16 @@ class StyledTextController extends TextEditingController {
     // Check if the current marker already exists
     if (lineContent.startsWith(marker)) {
       // Remove existing marker
-      text = curText.replaceRange(lineStart, lineStart + marker.length, '');
-      selection = TextSelection.collapsed(
-        offset: (curSelection.start - marker.length).clamp(0, text.length),
+      final newText = curText.replaceRange(
+        lineStart,
+        lineStart + marker.length,
+        '',
+      );
+      value = TextEditingValue(
+        text: newText,
+        selection: TextSelection.collapsed(
+          offset: (curSelection.start - marker.length).clamp(0, newText.length),
+        ),
       );
       return;
     }
@@ -412,18 +434,25 @@ class StyledTextController extends TextEditingController {
         lineStart + foundOther.length,
         '',
       );
-      text = removedText.replaceRange(lineStart, lineStart, marker);
-      selection = TextSelection.collapsed(
-        offset: (curSelection.start - foundOther.length + marker.length).clamp(
-          0,
-          text.length,
+      final finalText = removedText.replaceRange(lineStart, lineStart, marker);
+      value = TextEditingValue(
+        text: finalText,
+        selection: TextSelection.collapsed(
+          offset: (curSelection.start - foundOther.length + marker.length)
+              .clamp(0, finalText.length),
         ),
       );
     } else {
       // Add new marker
-      text = curText.replaceRange(lineStart, lineStart, marker);
-      selection = TextSelection.collapsed(
-        offset: (curSelection.start + marker.length).clamp(0, text.length),
+      final finalText = curText.replaceRange(lineStart, lineStart, marker);
+      value = TextEditingValue(
+        text: finalText,
+        selection: TextSelection.collapsed(
+          offset: (curSelection.start + marker.length).clamp(
+            0,
+            finalText.length,
+          ),
+        ),
       );
     }
   }

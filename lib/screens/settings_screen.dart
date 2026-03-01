@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
-import '../services/settings_service.dart';
 import 'privacy_policy_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -9,7 +7,6 @@ class SettingsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final settingsService = context.watch<SettingsService>();
     final theme = Theme.of(context);
 
     return Scaffold(
@@ -25,23 +22,6 @@ class SettingsScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _buildCardSection(context, 'Appearance', [
-            ListTile(
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Colors.blue.withAlpha(30),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.palette_outlined, color: Colors.blue),
-              ),
-              title: const Text('Theme Mode'),
-              subtitle: Text(settingsService.themeName),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () => _showThemeDialog(context, settingsService),
-            ),
-          ]),
-          const SizedBox(height: 16),
           _buildCardSection(context, 'Support & Feedback', [
             ListTile(
               leading: Container(
@@ -228,39 +208,6 @@ class SettingsScreen extends StatelessWidget {
           fontWeight: FontWeight.bold,
           color: Theme.of(context).colorScheme.primary,
           letterSpacing: 1.2,
-        ),
-      ),
-    );
-  }
-
-  void _showThemeDialog(BuildContext context, SettingsService settingsService) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Choose Theme'),
-        content: RadioGroup<ThemeMode>(
-          groupValue: settingsService.themeMode,
-          onChanged: (value) {
-            if (value != null) settingsService.setThemeMode(value);
-            Navigator.pop(context);
-          },
-          child: const Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              RadioListTile<ThemeMode>(
-                title: Text('System Default'),
-                value: ThemeMode.system,
-              ),
-              RadioListTile<ThemeMode>(
-                title: Text('Light'),
-                value: ThemeMode.light,
-              ),
-              RadioListTile<ThemeMode>(
-                title: Text('Dark'),
-                value: ThemeMode.dark,
-              ),
-            ],
-          ),
         ),
       ),
     );

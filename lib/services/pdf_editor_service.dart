@@ -13,6 +13,10 @@ class PdfEditorService extends ChangeNotifier {
   double _currentFontSize = 14.0;
   bool _isBold = false;
   bool _isItalic = false;
+  bool _isUnderline = false;
+  bool _isStrikethrough = false;
+  bool _isH1 = false;
+  bool _isH2 = false;
   TextAlign _textAlign = TextAlign.left;
 
   String? _selectedItemId;
@@ -27,6 +31,10 @@ class PdfEditorService extends ChangeNotifier {
   double get currentFontSize => _currentFontSize;
   bool get isBold => _isBold;
   bool get isItalic => _isItalic;
+  bool get isUnderline => _isUnderline;
+  bool get isStrikethrough => _isStrikethrough;
+  bool get isH1 => _isH1;
+  bool get isH2 => _isH2;
   TextAlign get textAlign => _textAlign;
   String? get selectedItemId => _selectedItemId;
 
@@ -67,6 +75,10 @@ class PdfEditorService extends ChangeNotifier {
         _currentFontSize = item.fontSize;
         _isBold = item.isBold;
         _isItalic = item.isItalic;
+        _isUnderline = item.isUnderline;
+        _isStrikethrough = item.isStrikethrough;
+        _isH1 = item.isH1;
+        _isH2 = item.isH2;
         _textAlign = item.textAlign;
       } else if (item is DrawingEditItem) {
         _currentColor = item.color;
@@ -123,6 +135,46 @@ class PdfEditorService extends ChangeNotifier {
     notifyListeners();
   }
 
+  void toggleUnderline() {
+    _isUnderline = !_isUnderline;
+    final item = selectedItem;
+    if (item is TextEditItem) {
+      item.isUnderline = _isUnderline;
+    }
+    notifyListeners();
+  }
+
+  void toggleStrikethrough() {
+    _isStrikethrough = !_isStrikethrough;
+    final item = selectedItem;
+    if (item is TextEditItem) {
+      item.isStrikethrough = _isStrikethrough;
+    }
+    notifyListeners();
+  }
+
+  void toggleH1() {
+    _isH1 = !_isH1;
+    if (_isH1) _isH2 = false; // Mutually exclusive
+    final item = selectedItem;
+    if (item is TextEditItem) {
+      item.isH1 = _isH1;
+      if (_isH1) item.isH2 = false;
+    }
+    notifyListeners();
+  }
+
+  void toggleH2() {
+    _isH2 = !_isH2;
+    if (_isH2) _isH1 = false; // Mutually exclusive
+    final item = selectedItem;
+    if (item is TextEditItem) {
+      item.isH2 = _isH2;
+      if (_isH2) item.isH1 = false;
+    }
+    notifyListeners();
+  }
+
   void setTextAlign(TextAlign alignment) {
     _textAlign = alignment;
     final item = selectedItem;
@@ -149,6 +201,10 @@ class PdfEditorService extends ChangeNotifier {
       fontSize: _currentFontSize,
       isBold: _isBold,
       isItalic: _isItalic,
+      isUnderline: _isUnderline,
+      isStrikethrough: _isStrikethrough,
+      isH1: _isH1,
+      isH2: _isH2,
       textAlign: _textAlign,
     );
     _addItem(newItem);
@@ -162,7 +218,7 @@ class PdfEditorService extends ChangeNotifier {
       pageIndex: _currentPageIndex,
       points: points,
       color: _currentColor,
-      strokeWidth: _activeTool == EditType.redact ? 20.0 : _currentStrokeWidth,
+      strokeWidth: _currentStrokeWidth,
     );
     _addItem(newItem);
   }

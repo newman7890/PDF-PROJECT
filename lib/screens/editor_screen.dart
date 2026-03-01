@@ -105,7 +105,21 @@ class _EditorScreenState extends State<EditorScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Edit Text'),
-        content: TextField(controller: controller, autofocus: true),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          style: TextStyle(
+            fontSize: item.isH1
+                ? 32
+                : item.isH2
+                ? 26
+                : item.fontSize,
+            fontWeight: (item.isBold || item.isH1 || item.isH2)
+                ? FontWeight.bold
+                : FontWeight.normal,
+            fontStyle: item.isItalic ? FontStyle.italic : FontStyle.normal,
+          ),
+        ),
         actions: [
           TextButton(
             onPressed: () {
@@ -196,203 +210,222 @@ class _EditorScreenState extends State<EditorScreen> {
           : Column(
               children: [
                 Expanded(
-                  child: InteractiveViewer(
-                    panEnabled:
-                        editor.activeTool == null &&
-                        editor.selectedItemId == null,
-                    scaleEnabled:
-                        editor.activeTool == null &&
-                        editor.selectedItemId == null,
-                    minScale: 0.5,
-                    maxScale: 4.0,
-                    child: Center(
-                      child: _currentPageImage == null
-                          ? const CircularProgressIndicator()
-                          : AspectRatio(
-                              aspectRatio:
-                                  (_currentPageImage!.width?.toDouble() ??
-                                      1.0) /
-                                  (_currentPageImage!.height?.toDouble() ??
-                                      1.0),
-                              child: LayoutBuilder(
-                                builder: (_, constraints) {
-                                  final W = constraints.maxWidth;
-                                  final H = constraints.maxHeight;
-                                  return Stack(
-                                    children: [
-                                      // Layer 1: PDF page image
-                                      Positioned.fill(
-                                        child: Image.memory(
-                                          _currentPageImage!.bytes,
-                                          fit: BoxFit.fill,
-                                        ),
-                                      ),
-
-                                      // Layer 2: Drawing strokes overlay
-                                      Positioned.fill(
-                                        child: CustomPaint(
-                                          painter: _OverlayPainter(
-                                            edits: editor.getEditsForPage(
-                                              _currentPage,
-                                            ),
-                                            currentDrawing: _currentDrawingPath,
-                                            drawingColor: editor.currentColor,
-                                            activeToolType: editor.activeTool,
+                  child: SafeArea(
+                    child: InteractiveViewer(
+                      panEnabled:
+                          editor.activeTool == null &&
+                          editor.selectedItemId == null,
+                      scaleEnabled:
+                          editor.activeTool == null &&
+                          editor.selectedItemId == null,
+                      minScale: 0.5,
+                      maxScale: 4.0,
+                      child: Center(
+                        child: _currentPageImage == null
+                            ? const CircularProgressIndicator()
+                            : AspectRatio(
+                                aspectRatio:
+                                    (_currentPageImage!.width?.toDouble() ??
+                                        1.0) /
+                                    (_currentPageImage!.height?.toDouble() ??
+                                        1.0),
+                                child: LayoutBuilder(
+                                  builder: (_, constraints) {
+                                    final W = constraints.maxWidth;
+                                    final H = constraints.maxHeight;
+                                    return Stack(
+                                      children: [
+                                        // Layer 1: PDF page image
+                                        Positioned.fill(
+                                          child: Image.memory(
+                                            _currentPageImage!.bytes,
+                                            fit: BoxFit.fill,
                                           ),
                                         ),
-                                      ),
 
-                                      // Layer 3: Text item widgets
-                                      ...editor
-                                          .getEditsForPage(_currentPage)
-                                          .whereType<TextEditItem>()
-                                          .map(
-                                            (item) => Positioned(
-                                              left: item.position.dx * W,
-                                              top: item.position.dy * H,
-                                              child: GestureDetector(
-                                                behavior:
-                                                    HitTestBehavior.opaque,
-                                                onTap: () =>
-                                                    editor.selectItem(item.id),
-                                                onPanUpdate:
-                                                    editor.activeTool == null
-                                                    ? (d) {
-                                                        editor.updateItemPosition(
-                                                          item.id,
-                                                          Offset(
-                                                            item.position.dx +
-                                                                d.delta.dx / W,
-                                                            item.position.dy +
-                                                                d.delta.dy / H,
+                                        // Layer 2: Drawing strokes overlay
+                                        Positioned.fill(
+                                          child: CustomPaint(
+                                            painter: _OverlayPainter(
+                                              edits: editor.getEditsForPage(
+                                                _currentPage,
+                                              ),
+                                              currentDrawing:
+                                                  _currentDrawingPath,
+                                              drawingColor: editor.currentColor,
+                                              activeToolType: editor.activeTool,
+                                            ),
+                                          ),
+                                        ),
+
+                                        // Layer 3: Text item widgets
+                                        ...editor
+                                            .getEditsForPage(_currentPage)
+                                            .whereType<TextEditItem>()
+                                            .map(
+                                              (item) => Positioned(
+                                                left: item.position.dx * W,
+                                                top: item.position.dy * H,
+                                                child: GestureDetector(
+                                                  behavior:
+                                                      HitTestBehavior.opaque,
+                                                  onTap: () => editor
+                                                      .selectItem(item.id),
+                                                  onPanUpdate:
+                                                      editor.activeTool == null
+                                                      ? (d) {
+                                                          editor.updateItemPosition(
+                                                            item.id,
+                                                            Offset(
+                                                              item.position.dx +
+                                                                  d.delta.dx /
+                                                                      W,
+                                                              item.position.dy +
+                                                                  d.delta.dy /
+                                                                      H,
+                                                            ),
+                                                          );
+                                                        }
+                                                      : null,
+                                                  onDoubleTap: () =>
+                                                      _editTextItem(
+                                                        context,
+                                                        editor,
+                                                        item,
+                                                      ),
+                                                  child: Container(
+                                                    padding:
+                                                        const EdgeInsets.symmetric(
+                                                          horizontal: 8,
+                                                          vertical:
+                                                              12, // Larger vertical target for mobile
+                                                        ),
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.white
+                                                          .withValues(
+                                                            alpha: 0.01,
+                                                          ), // Ensure hit detection
+                                                      border: Border.all(
+                                                        color:
+                                                            editor.selectedItemId ==
+                                                                item.id
+                                                            ? Colors.blue
+                                                            : Colors.blueAccent
+                                                                  .withValues(
+                                                                    alpha: 0.2,
+                                                                  ),
+                                                        width:
+                                                            editor.selectedItemId ==
+                                                                item.id
+                                                            ? 2
+                                                            : 1,
+                                                      ),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                            4,
                                                           ),
-                                                        );
-                                                      }
-                                                    : null,
-                                                onDoubleTap: () =>
-                                                    _editTextItem(
-                                                      context,
-                                                      editor,
-                                                      item,
                                                     ),
-                                                child: Container(
-                                                  padding: const EdgeInsets.all(
-                                                    2,
-                                                  ),
-                                                  decoration: BoxDecoration(
-                                                    border: Border.all(
-                                                      color:
-                                                          editor.selectedItemId ==
-                                                              item.id
-                                                          ? Colors.blue
-                                                          : Colors.blueAccent
-                                                                .withValues(
-                                                                  alpha: 0.3,
-                                                                ),
-                                                      width:
-                                                          editor.selectedItemId ==
-                                                              item.id
-                                                          ? 2
-                                                          : 1,
-                                                    ),
-                                                  ),
-                                                  child: Text(
-                                                    item.text,
-                                                    textAlign: item.textAlign,
-                                                    style: TextStyle(
-                                                      color: item.color,
-                                                      fontSize: item.fontSize,
-                                                      fontWeight: item.isBold
-                                                          ? FontWeight.bold
-                                                          : FontWeight.normal,
-                                                      fontStyle: item.isItalic
-                                                          ? FontStyle.italic
-                                                          : FontStyle.normal,
+                                                    child: Text(
+                                                      item.text,
+                                                      textAlign: item.textAlign,
+                                                      style: TextStyle(
+                                                        color: item.color,
+                                                        fontSize: item.isH1
+                                                            ? 32
+                                                            : item.isH2
+                                                            ? 26
+                                                            : item.fontSize,
+                                                        fontWeight:
+                                                            (item.isBold ||
+                                                                item.isH1 ||
+                                                                item.isH2)
+                                                            ? FontWeight.bold
+                                                            : FontWeight.normal,
+                                                        fontStyle: item.isItalic
+                                                            ? FontStyle.italic
+                                                            : FontStyle.normal,
+                                                      ),
                                                     ),
                                                   ),
                                                 ),
                                               ),
                                             ),
-                                          ),
 
-                                      // Layer 4: Gesture capture — only when an edit tool is active
-                                      if (editor.activeTool != null)
-                                        Positioned.fill(
-                                          child: GestureDetector(
-                                            behavior: HitTestBehavior.opaque,
-                                            onPanStart: (d) {
-                                              if (editor.activeTool ==
-                                                      EditType.drawing ||
-                                                  editor.activeTool ==
-                                                      EditType.redact) {
-                                                setState(() {
-                                                  _currentDrawingPath = [
-                                                    Offset(
-                                                      d.localPosition.dx / W,
-                                                      d.localPosition.dy / H,
+                                        // Layer 4: Gesture capture — only when an edit tool is active
+                                        if (editor.activeTool != null)
+                                          Positioned.fill(
+                                            child: GestureDetector(
+                                              behavior: HitTestBehavior.opaque,
+                                              onPanStart: (d) {
+                                                if (editor.activeTool ==
+                                                    EditType.drawing) {
+                                                  setState(() {
+                                                    _currentDrawingPath = [
+                                                      Offset(
+                                                        d.localPosition.dx / W,
+                                                        d.localPosition.dy / H,
+                                                      ),
+                                                    ];
+                                                  });
+                                                }
+                                              },
+                                              onPanUpdate: (d) {
+                                                if (editor.activeTool ==
+                                                    EditType.drawing) {
+                                                  setState(() {
+                                                    _currentDrawingPath.add(
+                                                      Offset(
+                                                        d.localPosition.dx / W,
+                                                        d.localPosition.dy / H,
+                                                      ),
+                                                    );
+                                                  });
+                                                }
+                                              },
+                                              onPanEnd: (_) {
+                                                if (_currentDrawingPath
+                                                    .isNotEmpty) {
+                                                  editor.addDrawing(
+                                                    List.from(
+                                                      _currentDrawingPath,
                                                     ),
-                                                  ];
-                                                });
-                                              }
-                                            },
-                                            onPanUpdate: (d) {
-                                              if (editor.activeTool ==
-                                                      EditType.drawing ||
-                                                  editor.activeTool ==
-                                                      EditType.redact) {
-                                                setState(() {
-                                                  _currentDrawingPath.add(
+                                                  );
+                                                  setState(
+                                                    () => _currentDrawingPath =
+                                                        [],
+                                                  );
+                                                }
+                                              },
+                                              onTapUp: (d) {
+                                                if (editor.activeTool ==
+                                                    EditType.text) {
+                                                  editor.addTextEdit(
                                                     Offset(
                                                       d.localPosition.dx / W,
                                                       d.localPosition.dy / H,
                                                     ),
                                                   );
-                                                });
-                                              }
-                                            },
-                                            onPanEnd: (_) {
-                                              if (_currentDrawingPath
-                                                  .isNotEmpty) {
-                                                editor.addDrawing(
-                                                  List.from(
-                                                    _currentDrawingPath,
-                                                  ),
-                                                );
-                                                setState(
-                                                  () =>
-                                                      _currentDrawingPath = [],
-                                                );
-                                              }
-                                            },
-                                            onTapUp: (d) {
-                                              if (editor.activeTool ==
-                                                  EditType.text) {
-                                                editor.addTextEdit(
-                                                  Offset(
-                                                    d.localPosition.dx / W,
-                                                    d.localPosition.dy / H,
-                                                  ),
-                                                );
-                                                editor.setActiveTool(null);
-                                              }
-                                            },
+                                                  editor.setActiveTool(null);
+                                                }
+                                              },
+                                            ),
+                                          )
+                                        else
+                                          // Background tap to clear selection
+                                          Positioned.fill(
+                                            child: GestureDetector(
+                                              behavior:
+                                                  HitTestBehavior.translucent,
+                                              onTap: () =>
+                                                  editor.selectItem(null),
+                                            ),
                                           ),
-                                        )
-                                      else
-                                        // Background tap to clear selection
-                                        Positioned.fill(
-                                          child: GestureDetector(
-                                            behavior:
-                                                HitTestBehavior.translucent,
-                                            onTap: () =>
-                                                editor.selectItem(null),
-                                          ),
-                                        ),
-                                    ],
-                                  );
-                                },
+                                      ],
+                                    );
+                                  },
+                                ),
                               ),
-                            ),
+                      ),
                     ),
                   ),
                 ),
@@ -429,46 +462,47 @@ class _EditorScreenState extends State<EditorScreen> {
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 4),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  _ToolButton(
-                    icon: Icons.pan_tool_outlined,
-                    label: 'Move',
-                    isActive:
-                        editor.activeTool == null &&
-                        editor.selectedItemId == null,
-                    onTap: () {
-                      editor.setActiveTool(null);
-                      editor.selectItem(null);
-                    },
+                  Expanded(
+                    child: _ToolButton(
+                      icon: Icons.pan_tool_outlined,
+                      label: 'Move',
+                      isActive:
+                          editor.activeTool == null &&
+                          editor.selectedItemId == null,
+                      onTap: () {
+                        editor.setActiveTool(null);
+                        editor.selectItem(null);
+                      },
+                    ),
                   ),
-                  _ToolButton(
-                    icon: Icons.text_fields,
-                    label: 'Text',
-                    isActive: editor.activeTool == EditType.text,
-                    onTap: () => editor.setActiveTool(EditType.text),
+                  Expanded(
+                    child: _ToolButton(
+                      icon: Icons.text_fields,
+                      label: 'Text',
+                      isActive: editor.activeTool == EditType.text,
+                      onTap: () => editor.setActiveTool(EditType.text),
+                    ),
                   ),
-                  _ToolButton(
-                    icon: Icons.edit,
-                    label: 'Draw',
-                    isActive: editor.activeTool == EditType.drawing,
-                    onTap: () => editor.setActiveTool(EditType.drawing),
+                  Expanded(
+                    child: _ToolButton(
+                      icon: Icons.edit,
+                      label: 'Draw',
+                      isActive: editor.activeTool == EditType.drawing,
+                      onTap: () => editor.setActiveTool(EditType.drawing),
+                    ),
                   ),
-                  _ToolButton(
-                    icon: Icons.format_color_fill,
-                    label: 'Redact',
-                    isActive: editor.activeTool == EditType.redact,
-                    onTap: () => editor.setActiveTool(EditType.redact),
-                  ),
-                  _ToolButton(
-                    icon: Icons.delete_outline,
-                    label: 'Delete',
-                    isActive: false,
-                    onTap: () {
-                      if (editor.selectedItemId != null) {
-                        editor.deleteItem(editor.selectedItemId!);
-                      }
-                    },
+                  Expanded(
+                    child: _ToolButton(
+                      icon: Icons.delete_outline,
+                      label: 'Delete',
+                      isActive: false,
+                      onTap: () {
+                        if (editor.selectedItemId != null) {
+                          editor.deleteItem(editor.selectedItemId!);
+                        }
+                      },
+                    ),
                   ),
                 ],
               ),
@@ -476,7 +510,7 @@ class _EditorScreenState extends State<EditorScreen> {
 
             // Page navigation
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.only(left: 16, right: 16, bottom: 4),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -585,6 +619,44 @@ class _EditorScreenState extends State<EditorScreen> {
                   onPressed: editor.toggleItalic,
                   visualDensity: VisualDensity.compact,
                 ),
+                IconButton(
+                  icon: Icon(
+                    Icons.format_underlined,
+                    color: editor.isUnderline ? Colors.indigo : Colors.grey,
+                  ),
+                  onPressed: editor.toggleUnderline,
+                  visualDensity: VisualDensity.compact,
+                ),
+                IconButton(
+                  icon: Icon(
+                    Icons.format_strikethrough,
+                    color: editor.isStrikethrough ? Colors.indigo : Colors.grey,
+                  ),
+                  onPressed: editor.toggleStrikethrough,
+                  visualDensity: VisualDensity.compact,
+                ),
+                IconButton(
+                  icon: Text(
+                    'H1',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: editor.isH1 ? Colors.indigo : Colors.grey,
+                    ),
+                  ),
+                  onPressed: editor.toggleH1,
+                  visualDensity: VisualDensity.compact,
+                ),
+                IconButton(
+                  icon: Text(
+                    'H2',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: editor.isH2 ? Colors.indigo : Colors.grey,
+                    ),
+                  ),
+                  onPressed: editor.toggleH2,
+                  visualDensity: VisualDensity.compact,
+                ),
               ],
             ],
           ),
@@ -673,7 +745,7 @@ class _ToolButton extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
         decoration: BoxDecoration(
           color: isActive
               ? Colors.indigo.withValues(alpha: 0.2)
@@ -718,7 +790,7 @@ class _OverlayPainter extends CustomPainter {
       if (edit is DrawingEditItem && edit.points.length > 1) {
         final paint = Paint()
           ..color = edit.color
-          ..strokeWidth = edit.type == EditType.redact ? 20.0 : edit.strokeWidth
+          ..strokeWidth = edit.strokeWidth
           ..strokeCap = StrokeCap.round
           ..style = PaintingStyle.stroke;
 
@@ -742,7 +814,7 @@ class _OverlayPainter extends CustomPainter {
     if (currentDrawing.length > 1) {
       final paint = Paint()
         ..color = drawingColor
-        ..strokeWidth = activeToolType == EditType.redact ? 20.0 : 3.0
+        ..strokeWidth = 3.0
         ..strokeCap = StrokeCap.round
         ..style = PaintingStyle.stroke;
 
@@ -764,4 +836,58 @@ class _OverlayPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _OverlayPainter old) => true;
+}
+
+class SignaturePainterHelper extends CustomPainter {
+  final List<Offset> points;
+  final Color color;
+  final double strokeWidth;
+
+  SignaturePainterHelper(this.points, this.color, this.strokeWidth);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (points.isEmpty) return;
+
+    // Find bounds to normalize
+    double minX = points[0].dx;
+    double minY = points[0].dy;
+    double maxX = points[0].dx;
+    double maxY = points[0].dy;
+
+    for (var p in points) {
+      if (p.dx < minX) minX = p.dx;
+      if (p.dy < minY) minY = p.dy;
+      if (p.dx > maxX) maxX = p.dx;
+      if (p.dy > maxY) maxY = p.dy;
+    }
+
+    double sigWidth = maxX - minX;
+    double sigHeight = maxY - minY;
+    if (sigWidth == 0) sigWidth = 1;
+    if (sigHeight == 0) sigHeight = 1;
+
+    final paint = Paint()
+      ..color = color
+      ..strokeCap = StrokeCap.round
+      ..strokeWidth = strokeWidth
+      ..style = PaintingStyle.stroke;
+
+    final List<Offset> normalized = points.map((p) {
+      return Offset(
+        (p.dx - minX) / sigWidth * size.width,
+        (p.dy - minY) / sigHeight * size.height,
+      );
+    }).toList();
+
+    for (int i = 0; i < normalized.length - 1; i++) {
+      // Check if this is a break in the signature (if we had nulls, but here we only have List<Offset>)
+      // In SignaturePadScreen we add null on PanEnd, but PdfEditorService.addSignature filters them.
+      // For now we assume a continuous line or handle distance jumps if needed.
+      canvas.drawLine(normalized[i], normalized[i + 1], paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(SignaturePainterHelper oldDelegate) => true;
 }
