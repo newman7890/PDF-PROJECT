@@ -66,7 +66,7 @@ class PrivacyPolicyScreen extends StatelessWidget {
                     context,
                     Icons.inventory_2_outlined,
                     '1. Local Data Processing',
-                    'Our application is built on the principle of local-first processing. All PDF generation, document scanning, and text recognition occur entirely on your smartphone. We do not operate any cloud servers to store your files.',
+                    'Our application is built on the principle of local-first processing. All PDF generation, document scanning, and text recognition occur entirely on your smartphone. We do not operate any cloud servers to store your files, and we have explicitly disabled OS-level cloud backups for your documents.',
                   ),
                   _buildSection(
                     context,

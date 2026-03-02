@@ -36,6 +36,12 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadDocuments();
   }
 
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
   Future<void> _loadDocuments() async {
     setState(() => _isLoading = true);
     final storage = context.read<StorageService>();

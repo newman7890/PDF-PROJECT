@@ -62,28 +62,147 @@ class StyledTextController extends TextEditingController {
     TextStyle? style,
     required bool withComposing,
   }) {
+    return buildRichTextSpan(text, style);
+  }
+
+  /// Reusable rich text parser that handles bold, italic, underline, strikethrough,
+  /// headers, lists, and color markers.
+  static TextSpan buildRichTextSpan(String text, TextStyle? style) {
+    if (text.isEmpty) return TextSpan(style: style);
     return _buildSpanRecursive(text, style);
   }
 
-  TextSpan _buildSpanRecursive(String text, TextStyle? style) {
+  static TextSpan _buildSpanRecursive(String text, TextStyle? style) {
     if (text.isEmpty) return TextSpan(style: style);
 
     final List<InlineSpan> children = [];
-    final markerStyle = style?.copyWith(
+    final markerStyle = (style ?? const TextStyle()).copyWith(
       color: Colors.transparent,
-      fontSize: 0,
-      letterSpacing: -1, // Collapse spacing for invisible markers
+      fontSize: 0.1, // Near-zero size to collapse space
+      height: 0,
+      letterSpacing: -1,
     );
 
     text.splitMapJoin(
       RegExp(
-        r'(\*\*.*?\*\*)|(\*.*?\*)|(__.*?__)|(~~.*?~~)|(\[H1\].*?\[/H1\])|(\[H2\].*?\[/H2\])|(\[H3\].*?\[/H3\])|(^- .*?$|^- .*?\n)|(^\d+\. .*?$|^\d+\. .*?\n)|(^---$|^---\n)|(\[:.*?:\])',
+        r'(\*\*\*[\s\S]*?\*\*\*)|' // Bold+Italic
+        r'(\[(?:H1|h1)\][\s\S]*?\[/(?:H1|h1)\]|^\s*#\s+.*?$)|' // H1
+        r'(\[(?:H2|h2)\][\s\S]*?\[/(?:H2|h2)\]|^\s*##\s+.*?$)|' // H2
+        r'(\[(?:H3|h3)\][\s\S]*?\[/(?:H3|h3)\]|^\s*###\s+.*?$)|' // H3
+        r'(\*\*[\s\S]*?\*\*)|' // Bold
+        r'(\*[\s\S]*?\*)|' // Italic
+        r'(__[\s\S]*?__)|' // Underline
+        r'(~~[\s\S]*?~~)|' // Strike
+        r'(^- .*?$|^- .*?\n)|' // Bullet
+        r'(^\d+\. .*?$|^\d+\. .*?\n)|' // Numbered
+        r'(^---+$|^---+\n)|' // HR
+        r'(\[/?(?:H1|h1|H2|h2|H3|h3)\]|\*\*\*|\*\*|\*|__|~~|---+|#+|\[:[\s\S]*?:\])', // Catch-all for stray markers
         multiLine: true,
       ),
       onMatch: (m) {
         final match = m.group(0)!;
 
-        if (match.startsWith('**')) {
+        if (m.group(1) != null) {
+          // *** Bold + Italic ***
+          final content = match.substring(3, match.length - 3);
+          children.add(TextSpan(text: '***', style: markerStyle));
+          children.add(
+            _buildSpanRecursive(
+              content,
+              style?.copyWith(
+                fontWeight: FontWeight.bold,
+                fontStyle: FontStyle.italic,
+                color: Colors.black,
+              ),
+            ),
+          );
+          children.add(TextSpan(text: '***', style: markerStyle));
+        } else if (m.group(2) != null) {
+          // H1
+          String content;
+          String startMarker;
+          String endMarker = '';
+          if (match.toLowerCase().startsWith('[h1]')) {
+            content = match.substring(4, match.length - 5);
+            startMarker = match.substring(0, 4);
+            endMarker = match.substring(match.length - 5);
+          } else {
+            final hashMatch = RegExp(r'^\s*#\s+').firstMatch(match)!;
+            startMarker = hashMatch.group(0)!;
+            content = match.substring(startMarker.length);
+          }
+          children.add(TextSpan(text: startMarker, style: markerStyle));
+          children.add(
+            _buildSpanRecursive(
+              content,
+              style?.copyWith(
+                fontWeight: FontWeight.bold,
+                fontSize: 22,
+                color: Colors.black,
+              ),
+            ),
+          );
+          if (endMarker.isNotEmpty) {
+            children.add(TextSpan(text: endMarker, style: markerStyle));
+          }
+        } else if (m.group(3) != null) {
+          // H2
+          String content;
+          String startMarker;
+          String endMarker = '';
+          if (match.toLowerCase().startsWith('[h2]')) {
+            content = match.substring(4, match.length - 5);
+            startMarker = match.substring(0, 4);
+            endMarker = match.substring(match.length - 5);
+          } else {
+            final hashMatch = RegExp(r'^\s*##\s+').firstMatch(match)!;
+            startMarker = hashMatch.group(0)!;
+            content = match.substring(startMarker.length);
+          }
+          children.add(TextSpan(text: startMarker, style: markerStyle));
+          children.add(
+            _buildSpanRecursive(
+              content,
+              style?.copyWith(
+                fontWeight: FontWeight.bold,
+                fontSize: 18,
+                color: Colors.black,
+              ),
+            ),
+          );
+          if (endMarker.isNotEmpty) {
+            children.add(TextSpan(text: endMarker, style: markerStyle));
+          }
+        } else if (m.group(4) != null) {
+          // H3
+          String content;
+          String startMarker;
+          String endMarker = '';
+          if (match.toLowerCase().startsWith('[h3]')) {
+            content = match.substring(4, match.length - 5);
+            startMarker = match.substring(0, 4);
+            endMarker = match.substring(match.length - 5);
+          } else {
+            final hashMatch = RegExp(r'^\s*###\s+').firstMatch(match)!;
+            startMarker = hashMatch.group(0)!;
+            content = match.substring(startMarker.length);
+          }
+          children.add(TextSpan(text: startMarker, style: markerStyle));
+          children.add(
+            _buildSpanRecursive(
+              content,
+              style?.copyWith(
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+                color: Colors.black,
+              ),
+            ),
+          );
+          if (endMarker.isNotEmpty) {
+            children.add(TextSpan(text: endMarker, style: markerStyle));
+          }
+        } else if (m.group(5) != null) {
+          // ** Bold **
           final content = match.substring(2, match.length - 2);
           children.add(TextSpan(text: '**', style: markerStyle));
           children.add(
@@ -93,7 +212,8 @@ class StyledTextController extends TextEditingController {
             ),
           );
           children.add(TextSpan(text: '**', style: markerStyle));
-        } else if (match.startsWith('*')) {
+        } else if (m.group(6) != null) {
+          // * Italic *
           final content = match.substring(1, match.length - 1);
           children.add(TextSpan(text: '*', style: markerStyle));
           children.add(
@@ -103,7 +223,8 @@ class StyledTextController extends TextEditingController {
             ),
           );
           children.add(TextSpan(text: '*', style: markerStyle));
-        } else if (match.startsWith('__')) {
+        } else if (m.group(7) != null) {
+          // __ Underline __
           final content = match.substring(2, match.length - 2);
           children.add(TextSpan(text: '__', style: markerStyle));
           children.add(
@@ -116,7 +237,8 @@ class StyledTextController extends TextEditingController {
             ),
           );
           children.add(TextSpan(text: '__', style: markerStyle));
-        } else if (match.startsWith('~~')) {
+        } else if (m.group(8) != null) {
+          // ~~ Strike ~~
           final content = match.substring(2, match.length - 2);
           children.add(TextSpan(text: '~~', style: markerStyle));
           children.add(
@@ -129,75 +251,43 @@ class StyledTextController extends TextEditingController {
             ),
           );
           children.add(TextSpan(text: '~~', style: markerStyle));
-        } else if (match.startsWith('[H1]')) {
-          final content = match.substring(4, match.length - 5);
-          children.add(TextSpan(text: '[H1]', style: markerStyle));
-          children.add(
-            _buildSpanRecursive(
-              content,
-              style?.copyWith(
-                fontWeight: FontWeight.bold,
-                fontSize: 22,
-                color: Colors.black,
-              ),
-            ),
-          );
-          children.add(TextSpan(text: '[/H1]', style: markerStyle));
-        } else if (match.startsWith('[H2]')) {
-          final content = match.substring(4, match.length - 5);
-          children.add(TextSpan(text: '[H2]', style: markerStyle));
-          children.add(
-            _buildSpanRecursive(
-              content,
-              style?.copyWith(
-                fontWeight: FontWeight.bold,
-                fontSize: 18,
-                color: Colors.black,
-              ),
-            ),
-          );
-          children.add(TextSpan(text: '[/H2]', style: markerStyle));
-        } else if (match.startsWith('[H3]')) {
-          final content = match.substring(4, match.length - 5);
-          children.add(TextSpan(text: '[H3]', style: markerStyle));
-          children.add(
-            _buildSpanRecursive(
-              content,
-              style?.copyWith(
-                fontWeight: FontWeight.bold,
-                fontSize: 14,
-                color: Colors.black,
-              ),
-            ),
-          );
-          children.add(TextSpan(text: '[/H3]', style: markerStyle));
-        } else if (match.startsWith('- ')) {
+        } else if (m.group(9) != null) {
+          // Bullet
           children.add(
             TextSpan(
               text: '• ',
-              style: style?.copyWith(
-                color: Colors.black,
+              style: (style ?? const TextStyle()).copyWith(
                 fontWeight: FontWeight.bold,
+                color: Colors.black,
               ),
             ),
           );
-          children.add(_buildSpanRecursive(match.substring(2), style));
-        } else if (RegExp(r'^\d+\. ').hasMatch(match)) {
+          children.add(
+            _buildSpanRecursive(
+              match.substring(2),
+              style?.copyWith(color: Colors.black),
+            ),
+          );
+        } else if (m.group(10) != null) {
+          // Numbered
           final dotIndex = match.indexOf('. ');
-          final number = match.substring(0, dotIndex + 2);
           children.add(
             TextSpan(
-              text: number,
-              style: style?.copyWith(
-                color: Colors.black,
+              text: match.substring(0, dotIndex + 2),
+              style: (style ?? const TextStyle()).copyWith(
                 fontWeight: FontWeight.bold,
+                color: Colors.black,
               ),
             ),
           );
           children.add(
-            _buildSpanRecursive(match.substring(dotIndex + 2), style),
+            _buildSpanRecursive(
+              match.substring(dotIndex + 2),
+              style?.copyWith(color: Colors.black),
+            ),
           );
-        } else if (match.startsWith('---')) {
+        } else if (m.group(11) != null) {
+          // HR
           children.add(
             WidgetSpan(
               child: Container(
@@ -209,32 +299,32 @@ class StyledTextController extends TextEditingController {
             ),
           );
           children.add(TextSpan(text: match, style: markerStyle));
-        } else if (match.startsWith('[:color:')) {
-          final hexColor = match.substring(8, 15);
-          try {
-            final color = Color(int.parse(hexColor.replaceFirst('#', '0xFF')));
+        } else if (m.group(12) != null) {
+          // Color / Meta
+          if (match.startsWith('[:color:') && match.endsWith(':]')) {
+            try {
+              // Extract dynamically based on length, preventing out of bounds on short strings
+              final hexColor = match.substring(8, match.length - 2);
+              final color = Color(
+                int.parse(hexColor.replaceFirst('#', '0xFF')),
+              );
+              children.add(TextSpan(text: match, style: markerStyle));
+              children.add(
+                TextSpan(
+                  text: ' ● ',
+                  style: TextStyle(color: color, fontSize: 16),
+                ),
+              );
+            } catch (_) {
+              children.add(TextSpan(text: match, style: style));
+            }
+          } else if (match.startsWith('[:left:]') ||
+              match.startsWith('[:center:]') ||
+              match.startsWith('[:right:]')) {
             children.add(TextSpan(text: match, style: markerStyle));
-            children.add(
-              TextSpan(
-                text: ' ● ',
-                style: TextStyle(color: color, fontSize: 16),
-              ),
-            );
-          } catch (_) {
-            children.add(TextSpan(text: match, style: style));
+          } else {
+            children.add(TextSpan(text: match, style: markerStyle));
           }
-        } else if (match.startsWith('[:')) {
-          children.add(TextSpan(text: match, style: markerStyle));
-        } else if (match.startsWith('[')) {
-          children.add(
-            TextSpan(
-              text: match,
-              style: style?.copyWith(
-                color: Colors.blue,
-                decoration: TextDecoration.underline,
-              ),
-            ),
-          );
         }
         return '';
       },
@@ -281,7 +371,9 @@ class StyledTextController extends TextEditingController {
   }
 
   void insertHorizontalRule() {
-    final curSelection = selection;
+    final curSelection = selection.isValid
+        ? selection
+        : TextSelection.collapsed(offset: text.length);
     final curText = text;
     final newText = curText.replaceRange(
       curSelection.start,
@@ -313,7 +405,9 @@ class StyledTextController extends TextEditingController {
   }
 
   void _wrapSelection(String prefix, String suffix) {
-    final curSelection = selection;
+    final curSelection = selection.isValid
+        ? selection
+        : TextSelection.collapsed(offset: text.length);
     final curText = text;
 
     if (curSelection.isCollapsed) {
@@ -354,7 +448,9 @@ class StyledTextController extends TextEditingController {
     String newText;
     TextSelection newSelection;
 
-    if (selectedText.startsWith(prefix) && selectedText.endsWith(suffix)) {
+    if (selectedText.length >= prefix.length + suffix.length &&
+        selectedText.startsWith(prefix) &&
+        selectedText.endsWith(suffix)) {
       final unwrapped = selectedText.substring(
         prefix.length,
         selectedText.length - suffix.length,
@@ -385,7 +481,9 @@ class StyledTextController extends TextEditingController {
   }
 
   void _toggleLineStart(String marker, {List<String>? replaceOthers}) {
-    final curSelection = selection;
+    final curSelection = selection.isValid
+        ? selection
+        : TextSelection.collapsed(offset: text.length);
     final curText = text;
 
     // Find start of line

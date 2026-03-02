@@ -9,6 +9,7 @@ class ScannedDocument {
   final bool isPdf;
 
   final bool? isScanned;
+  final String? fileSize;
 
   ScannedDocument({
     required this.id,
@@ -17,6 +18,7 @@ class ScannedDocument {
     required this.dateCreated,
     this.isPdf = true,
     this.isScanned,
+    this.fileSize,
   });
 
   /// Factory constructor to create a ScannedDocument from a Map (useful for local storage).
@@ -28,6 +30,7 @@ class ScannedDocument {
       dateCreated: DateTime.parse(map['dateCreated']),
       isPdf: map['isPdf'] ?? true,
       isScanned: map['isScanned'],
+      fileSize: map['fileSize'],
     );
   }
 
@@ -36,6 +39,7 @@ class ScannedDocument {
     String? filePath,
     bool? isPdf,
     bool? isScanned,
+    String? fileSize,
   }) {
     return ScannedDocument(
       id: id,
@@ -44,6 +48,7 @@ class ScannedDocument {
       dateCreated: dateCreated,
       isPdf: isPdf ?? this.isPdf,
       isScanned: isScanned ?? this.isScanned,
+      fileSize: fileSize ?? this.fileSize,
     );
   }
 
@@ -56,14 +61,21 @@ class ScannedDocument {
       'dateCreated': dateCreated.toIso8601String(),
       'isPdf': isPdf,
       'isScanned': isScanned,
+      'fileSize': fileSize,
     };
   }
 
   /// Returns the file size in a readable format.
   String getFileSize() {
+    if (fileSize != null) return fileSize!;
+
     final file = File(filePath);
     if (!file.existsSync()) return "Unknown size";
     final bytes = file.lengthSync();
+    return formatBytes(bytes);
+  }
+
+  static String formatBytes(int bytes) {
     if (bytes < 1024) return "$bytes B";
     if (bytes < 1024 * 1024) return "${(bytes / 1024).toStringAsFixed(1)} KB";
     return "${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB";

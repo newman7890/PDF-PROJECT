@@ -322,22 +322,6 @@ class _TextEditorScreenState extends State<TextEditorScreen> {
             ),
             const VerticalDivider(width: 16),
             _ToolbarButton(
-              icon: Icons.format_align_left,
-              onPressed: () => _controller.setAlignment('left'),
-              tooltip: 'Align Left',
-            ),
-            _ToolbarButton(
-              icon: Icons.format_align_center,
-              onPressed: () => _controller.setAlignment('center'),
-              tooltip: 'Align Center',
-            ),
-            _ToolbarButton(
-              icon: Icons.format_align_right,
-              onPressed: () => _controller.setAlignment('right'),
-              tooltip: 'Align Right',
-            ),
-            const VerticalDivider(width: 16),
-            _ToolbarButton(
               icon: Icons.format_list_bulleted,
               onPressed: _controller.toggleBulletList,
               tooltip: 'Bullet List',

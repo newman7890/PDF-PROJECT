@@ -6,6 +6,7 @@ import '../models/pdf_edit_overlay.dart';
 import '../services/pdf_editor_service.dart';
 import '../services/storage_service.dart';
 import '../services/pdf_service.dart';
+import '../services/rich_text_service.dart';
 
 class EditorScreen extends StatefulWidget {
   final ScannedDocument document;
@@ -100,7 +101,7 @@ class _EditorScreenState extends State<EditorScreen> {
     PdfEditorService editor,
     TextEditItem item,
   ) {
-    final controller = TextEditingController(text: item.text);
+    final controller = StyledTextController()..text = item.text;
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -108,6 +109,7 @@ class _EditorScreenState extends State<EditorScreen> {
         content: TextField(
           controller: controller,
           autofocus: true,
+          maxLines: null,
           style: TextStyle(
             fontSize: item.isH1
                 ? 32
@@ -118,6 +120,10 @@ class _EditorScreenState extends State<EditorScreen> {
                 ? FontWeight.bold
                 : FontWeight.normal,
             fontStyle: item.isItalic ? FontStyle.italic : FontStyle.normal,
+            decoration: TextDecoration.combine([
+              if (item.isUnderline) TextDecoration.underline,
+              if (item.isStrikethrough) TextDecoration.lineThrough,
+            ]),
           ),
         ),
         actions: [
@@ -325,26 +331,41 @@ class _EditorScreenState extends State<EditorScreen> {
                                                             4,
                                                           ),
                                                     ),
-                                                    child: Text(
-                                                      item.text,
-                                                      textAlign: item.textAlign,
-                                                      style: TextStyle(
-                                                        color: item.color,
-                                                        fontSize: item.isH1
-                                                            ? 32
-                                                            : item.isH2
-                                                            ? 26
-                                                            : item.fontSize,
-                                                        fontWeight:
-                                                            (item.isBold ||
-                                                                item.isH1 ||
-                                                                item.isH2)
-                                                            ? FontWeight.bold
-                                                            : FontWeight.normal,
-                                                        fontStyle: item.isItalic
-                                                            ? FontStyle.italic
-                                                            : FontStyle.normal,
+                                                    child: Text.rich(
+                                                      StyledTextController.buildRichTextSpan(
+                                                        item.text,
+                                                        TextStyle(
+                                                          color: item.color,
+                                                          fontSize: item.isH1
+                                                              ? 32
+                                                              : item.isH2
+                                                              ? 26
+                                                              : item.fontSize,
+                                                          fontWeight:
+                                                              (item.isBold ||
+                                                                  item.isH1 ||
+                                                                  item.isH2)
+                                                              ? FontWeight.bold
+                                                              : FontWeight
+                                                                    .normal,
+                                                          fontStyle:
+                                                              item.isItalic
+                                                              ? FontStyle.italic
+                                                              : FontStyle
+                                                                    .normal,
+                                                          decoration: TextDecoration.combine([
+                                                            if (item
+                                                                .isUnderline)
+                                                              TextDecoration
+                                                                  .underline,
+                                                            if (item
+                                                                .isStrikethrough)
+                                                              TextDecoration
+                                                                  .lineThrough,
+                                                          ]),
+                                                        ),
                                                       ),
+                                                      textAlign: item.textAlign,
                                                     ),
                                                   ),
                                                 ),
@@ -664,36 +685,6 @@ class _EditorScreenState extends State<EditorScreen> {
           Row(
             children: [
               if (isText) ...[
-                IconButton(
-                  icon: Icon(
-                    Icons.format_align_left,
-                    color: editor.textAlign == TextAlign.left
-                        ? Colors.indigo
-                        : Colors.grey,
-                  ),
-                  onPressed: () => editor.setTextAlign(TextAlign.left),
-                  visualDensity: VisualDensity.compact,
-                ),
-                IconButton(
-                  icon: Icon(
-                    Icons.format_align_center,
-                    color: editor.textAlign == TextAlign.center
-                        ? Colors.indigo
-                        : Colors.grey,
-                  ),
-                  onPressed: () => editor.setTextAlign(TextAlign.center),
-                  visualDensity: VisualDensity.compact,
-                ),
-                IconButton(
-                  icon: Icon(
-                    Icons.format_align_right,
-                    color: editor.textAlign == TextAlign.right
-                        ? Colors.indigo
-                        : Colors.grey,
-                  ),
-                  onPressed: () => editor.setTextAlign(TextAlign.right),
-                  visualDensity: VisualDensity.compact,
-                ),
                 const SizedBox(width: 8),
                 const Text('Size:'),
                 Expanded(

@@ -21,7 +21,10 @@ void main() async {
         ),
         Provider<StorageService>(create: (_) => StorageService()),
         Provider<PDFService>(create: (_) => PDFService()),
-        Provider<OCRService>(create: (_) => OCRService()),
+        Provider<OCRService>(
+          create: (_) => OCRService(),
+          dispose: (_, service) => service.dispose(),
+        ),
         Provider<PermissionService>(create: (_) => PermissionService()),
         Provider<ImageProcessingService>(
           create: (_) => ImageProcessingService(),

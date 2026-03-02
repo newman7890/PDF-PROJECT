@@ -21,10 +21,22 @@ class StorageService {
 
     // Check if the document already exists in metadata
     final index = docs.indexWhere((item) => item.id == doc.id);
+
+    // Populate size if missing
+    ScannedDocument docToSave = doc;
+    if (docToSave.fileSize == null) {
+      final file = File(doc.filePath);
+      if (file.existsSync()) {
+        docToSave = doc.copyWith(
+          fileSize: ScannedDocument.formatBytes(file.lengthSync()),
+        );
+      }
+    }
+
     if (index != -1) {
-      docs[index] = doc;
+      docs[index] = docToSave;
     } else {
-      docs.add(doc);
+      docs.add(docToSave);
     }
 
     await _saveMetadata(docs);
@@ -42,8 +54,24 @@ class StorageService {
 
       final content = await file.readAsString();
       final List<dynamic> jsonList = json.decode(content);
-      return jsonList.map((e) => ScannedDocument.fromMap(e)).toList()
-        ..sort((a, b) => b.dateCreated.compareTo(a.dateCreated));
+      final List<ScannedDocument> docs = jsonList
+          .map((e) => ScannedDocument.fromMap(e))
+          .toList();
+
+      // Population of missing file sizes or update existing ones
+      for (int i = 0; i < docs.length; i++) {
+        if (docs[i].fileSize == null) {
+          final docFile = File(docs[i].filePath);
+          if (docFile.existsSync()) {
+            final size = await docFile.length();
+            docs[i] = docs[i].copyWith(
+              fileSize: ScannedDocument.formatBytes(size),
+            );
+          }
+        }
+      }
+
+      return docs..sort((a, b) => b.dateCreated.compareTo(a.dateCreated));
     } catch (e) {
       debugPrint("Error loading documents: $e");
       return [];
@@ -82,6 +110,11 @@ class StorageService {
     final directory = await _localDirectory;
     final newPath = path.join(directory.path, safeName);
 
+    // Collision check
+    if (File(newPath).existsSync() && newPath != doc.filePath) {
+      throw Exception("A document with this name already exists.");
+    }
+
     // Rename physical file
     final oldFile = File(doc.filePath);
     if (oldFile.existsSync()) {
@@ -106,6 +139,25 @@ class StorageService {
     final file = File(path.join(directory.path, _metadataFile));
     final jsonContent = json.encode(docs.map((e) => e.toMap()).toList());
     await file.writeAsString(jsonContent);
+  }
+
+  /// Clears temporary cache files.
+  Future<void> clearCache() async {
+    try {
+      final tempDir = await getTemporaryDirectory();
+      if (tempDir.existsSync()) {
+        final files = tempDir.listSync();
+        for (final file in files) {
+          if (file is File) {
+            try {
+              await file.delete();
+            } catch (_) {}
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint("Error clearing cache: $e");
+    }
   }
 
   /// Returns a path for a new PDF file.
