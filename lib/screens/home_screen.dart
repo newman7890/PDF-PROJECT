@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:path/path.dart' as path;
 import 'package:share_plus/share_plus.dart';
 import 'dart:async';
+import 'package:flutter/services.dart';
 
 import '../services/storage_service.dart';
 import '../services/pdf_service.dart';
@@ -32,10 +33,80 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isSearching = false;
   final TextEditingController _searchController = TextEditingController();
 
+  final _platformChannel = const MethodChannel('com.pdfeditor/intent');
+
   @override
   void initState() {
     super.initState();
     _loadDocuments();
+    _setupIntentListener();
+  }
+
+  void _setupIntentListener() {
+    // Listen for intents while app is running
+    _platformChannel.setMethodCallHandler((call) async {
+      if (call.method == 'onNewPdf') {
+        final String? path = call.arguments;
+        if (path != null) {
+          _handleIncomingPdf(path);
+        }
+      }
+    });
+
+    // Check if app was started from an intent
+    _platformChannel
+        .invokeMethod('getInitialPdf')
+        .then((path) {
+          if (path != null && path is String) {
+            _handleIncomingPdf(path);
+          }
+        })
+        .catchError((e) {
+          debugPrint("Failed to get initial PDF: $e");
+        });
+  }
+
+  Future<void> _handleIncomingPdf(String tempPath) async {
+    if (!mounted) return;
+    setState(() => _isImporting = true);
+
+    try {
+      final storage = context.read<StorageService>();
+      final file = File(tempPath);
+
+      if (!await file.exists()) {
+        throw Exception("Imported file not found");
+      }
+
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final baseName = 'Extracted_PDF_$timestamp';
+      final finalPath = await storage.getNewFilePath(baseName);
+
+      await file.copy(finalPath);
+
+      final doc = ScannedDocument(
+        id: DateTime.now().toIso8601String(),
+        title: '$baseName.pdf',
+        filePath: finalPath,
+        dateCreated: DateTime.now(),
+        isPdf: true,
+      );
+
+      await storage.saveDocument(doc);
+      await _loadDocuments(); // Refresh list
+
+      if (!mounted) return;
+      setState(() => _isImporting = false);
+
+      // Auto-open in the text extractor
+      _openTextEditor(doc);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isImporting = false);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to import PDF: $e')));
+    }
   }
 
   @override
