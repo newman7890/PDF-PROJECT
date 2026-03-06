@@ -91,11 +91,54 @@ class _TextEditorScreenState extends State<TextEditorScreen>
     }
   }
 
-  Future<void> _saveAsPdf() async {
+  Future<void> _saveAsPdf({bool silent = false}) async {
     if (_isSaving) return;
 
     final pdfService = context.read<PDFService>();
     final storageService = context.read<StorageService>();
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+
+    if (!silent) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: const Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, color: Colors.orange),
+              SizedBox(width: 10),
+              Text('Review Changes'),
+            ],
+          ),
+          content: const Text(
+            'Please read through your changes carefully and make sure all edits are correct before saving.',
+            style: TextStyle(fontSize: 15),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Wait, let me check'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.indigo,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              child: const Text('Yes, save now'),
+            ),
+          ],
+        ),
+      );
+
+      if (confirmed != true) return;
+    }
 
     setState(() {
       _isSaving = true;
@@ -135,19 +178,21 @@ class _TextEditorScreenState extends State<TextEditorScreen>
       );
 
       if (!mounted) return;
-      Navigator.pop(context);
+      if (!silent) {
+        navigator.pop();
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('✨ Document Refined & Saved Successfully!'),
-          backgroundColor: Colors.indigo[800],
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+        scaffoldMessenger.showSnackBar(
+          SnackBar(
+            content: const Text('✨ Document Refined & Saved Successfully!'),
+            backgroundColor: Colors.indigo[800],
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() => _isSaving = false);
-      ScaffoldMessenger.of(context).showSnackBar(
+      scaffoldMessenger.showSnackBar(
         SnackBar(content: Text('Save failed: $e'), backgroundColor: Colors.red),
       );
     }
@@ -213,11 +258,30 @@ class _TextEditorScreenState extends State<TextEditorScreen>
     return Scaffold(
       backgroundColor: const Color(0xFFFBFBFE),
       appBar: _buildAppBar(),
-      body: Stack(
-        children: [
-          _isLoading ? _buildLoadingUI() : _buildEditorUI(),
-          if (!_isLoading) _buildReferenceOverlay(),
-        ],
+      body: PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, result) async {
+          if (didPop) return;
+          // Auto-save on exit if text was changed or signature added
+          bool hasChanges = _controller.text != widget.document.extractedText;
+          if (_signaturePoints != null && _signaturePoints!.isNotEmpty) {
+            hasChanges = true;
+          }
+
+          final navigator = Navigator.of(context);
+          if (hasChanges) {
+            await _saveAsPdf(silent: true);
+          }
+          if (mounted) {
+            navigator.pop();
+          }
+        },
+        child: Stack(
+          children: [
+            _isLoading ? _buildLoadingUI() : _buildEditorUI(),
+            if (!_isLoading) _buildReferenceOverlay(),
+          ],
+        ),
       ),
       floatingActionButton: _isLoading ? null : _buildReferenceFAB(),
     );
@@ -569,13 +633,14 @@ class _TextEditorScreenState extends State<TextEditorScreen>
   }
 
   Future<void> _openSignature() async {
-    final points = await Navigator.push<List<Offset>>(
-      context,
+    final navigator = Navigator.of(context);
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    final points = await navigator.push<List<Offset>>(
       MaterialPageRoute(builder: (c) => const SignaturePadScreen()),
     );
     if (points != null && points.isNotEmpty && mounted) {
       setState(() => _signaturePoints = points);
-      ScaffoldMessenger.of(context).showSnackBar(
+      scaffoldMessenger.showSnackBar(
         const SnackBar(
           content: Text('✅ Signature captured and ready for export.'),
           backgroundColor: Colors.green,

@@ -260,374 +260,449 @@ class _EditorScreenState extends State<EditorScreen> {
           IconButton(
             icon: const Icon(Icons.check),
             tooltip: 'Save edited PDF',
-            onPressed: () async {
-              setState(() => _isLoading = true);
-              final scaffoldMessenger = ScaffoldMessenger.of(context);
-              final navigator = Navigator.of(context);
-              try {
-                final editorSession = context.read<PdfEditorService>();
-                final pdfService = context.read<PDFService>();
-                final storageService = context.read<StorageService>();
-
-                final String currentTitle = widget.document.title;
-                final bool alreadyEdited = currentTitle.startsWith('Edited_');
-
-                final newTitle = alreadyEdited
-                    ? currentTitle
-                    : 'Edited_$currentTitle';
-
-                final String sourcePath =
-                    widget.document.sourcePath ?? widget.document.filePath;
-
-                final newPath = alreadyEdited
-                    ? widget.document.filePath
-                    : await storageService.getNewFilePath(
-                        newTitle.replaceAll('.pdf', ''),
-                      );
-
-                await pdfService.flattenEditsToPdf(
-                  sourcePath,
-                  editorSession.edits,
-                  newPath,
-                );
-
-                final updatedDoc = widget.document.copyWith(
-                  title: newTitle,
-                  filePath: newPath,
-                  sourcePath: sourcePath,
-                  overlayEdits: editorSession.edits,
-                );
-
-                await storageService.saveDocument(updatedDoc);
-                // No longer clearing all to allow continued editing if needed,
-                // but we pop the screen anyway.
-                // editorSession.clearAll();
-
-                if (!mounted) return;
-                navigator.pop();
-              } catch (e) {
-                if (!mounted) return;
-                scaffoldMessenger.showSnackBar(
-                  SnackBar(content: Text('Failed to save: $e')),
-                );
-                setState(() => _isLoading = false);
-              }
-            },
+            onPressed: () => _savePdf(),
           ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
-                Expanded(
-                  child: SafeArea(
-                    child: InteractiveViewer(
-                      panEnabled:
-                          editor.activeTool == null &&
-                          editor.selectedItemId == null,
-                      scaleEnabled:
-                          editor.activeTool == null &&
-                          editor.selectedItemId == null,
-                      minScale: 0.5,
-                      maxScale: 4.0,
-                      child: Center(
-                        child: _currentPageImage == null
-                            ? const CircularProgressIndicator()
-                            : AspectRatio(
-                                aspectRatio:
-                                    (_currentPageImage!.width?.toDouble() ??
-                                        1.0) /
-                                    (_currentPageImage!.height?.toDouble() ??
-                                        1.0),
-                                child: LayoutBuilder(
-                                  builder: (_, constraints) {
-                                    final W = constraints.maxWidth;
-                                    final H = constraints.maxHeight;
-                                    return Stack(
-                                      children: [
-                                        // Layer 1: PDF page image (cached, never repaints during drawing)
-                                        Positioned.fill(
-                                          child: RepaintBoundary(
-                                            child: Image.memory(
-                                              _currentPageImage!.bytes,
-                                              fit: BoxFit.fill,
-                                              gaplessPlayback: true,
-                                            ),
-                                          ),
-                                        ),
-
-                                        // Layer 2: Drawing strokes overlay (isolated repaint)
-                                        Positioned.fill(
-                                          child: RepaintBoundary(
-                                            child: CustomPaint(
-                                              isComplex: true,
-                                              willChange: _currentDrawingPath
-                                                  .isNotEmpty,
-                                              painter: _OverlayPainter(
-                                                edits: editor.getEditsForPage(
-                                                  _currentPage,
-                                                ),
-                                                currentDrawing:
-                                                    _currentDrawingPath,
-                                                drawingColor:
-                                                    editor.currentColor,
-                                                activeToolType:
-                                                    editor.activeTool,
+      body: PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, result) async {
+          if (didPop) return;
+          final editor = context.read<PdfEditorService>();
+          final navigator = Navigator.of(context);
+          if (editor.edits.isNotEmpty) {
+            // Auto-save silently on exit if there are edits
+            await _savePdf(silent: true);
+          }
+          if (mounted) {
+            navigator.pop();
+          }
+        },
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : Column(
+                children: [
+                  Expanded(
+                    child: SafeArea(
+                      child: InteractiveViewer(
+                        panEnabled:
+                            editor.activeTool == null &&
+                            editor.selectedItemId == null,
+                        scaleEnabled:
+                            editor.activeTool == null &&
+                            editor.selectedItemId == null,
+                        minScale: 0.5,
+                        maxScale: 4.0,
+                        child: Center(
+                          child: _currentPageImage == null
+                              ? const CircularProgressIndicator()
+                              : AspectRatio(
+                                  aspectRatio:
+                                      (_currentPageImage!.width?.toDouble() ??
+                                          1.0) /
+                                      (_currentPageImage!.height?.toDouble() ??
+                                          1.0),
+                                  child: LayoutBuilder(
+                                    builder: (_, constraints) {
+                                      final W = constraints.maxWidth;
+                                      final H = constraints.maxHeight;
+                                      return Stack(
+                                        children: [
+                                          // Layer 1: PDF page image (cached, never repaints during drawing)
+                                          Positioned.fill(
+                                            child: RepaintBoundary(
+                                              child: Image.memory(
+                                                _currentPageImage!.bytes,
+                                                fit: BoxFit.fill,
+                                                gaplessPlayback: true,
                                               ),
                                             ),
                                           ),
-                                        ),
 
-                                        // Layer 3: Text item widgets
-                                        ...editor
-                                            .getEditsForPage(_currentPage)
-                                            .whereType<TextEditItem>()
-                                            .map(
-                                              (item) => Positioned(
-                                                left: item.position.dx * W,
-                                                top: item.position.dy * H,
-                                                child: GestureDetector(
-                                                  behavior:
-                                                      HitTestBehavior.opaque,
-                                                  onTap: () => editor
-                                                      .selectItem(item.id),
-                                                  onPanUpdate:
-                                                      editor.activeTool == null
-                                                      ? (d) {
-                                                          editor.updateItemPosition(
-                                                            item.id,
-                                                            Offset(
-                                                              item.position.dx +
-                                                                  d.delta.dx /
-                                                                      W,
-                                                              item.position.dy +
-                                                                  d.delta.dy /
-                                                                      H,
-                                                            ),
-                                                          );
-                                                        }
-                                                      : null,
-                                                  onDoubleTap: () =>
-                                                      _editTextItem(
-                                                        context,
-                                                        editor,
-                                                        item,
-                                                      ),
-                                                  child: Container(
-                                                    padding:
-                                                        const EdgeInsets.symmetric(
-                                                          horizontal: 8,
-                                                          vertical:
-                                                              12, // Larger vertical target for mobile
+                                          // Layer 2: Drawing strokes overlay (isolated repaint)
+                                          Positioned.fill(
+                                            child: RepaintBoundary(
+                                              child: CustomPaint(
+                                                isComplex: true,
+                                                willChange: _currentDrawingPath
+                                                    .isNotEmpty,
+                                                painter: _OverlayPainter(
+                                                  edits: editor.getEditsForPage(
+                                                    _currentPage,
+                                                  ),
+                                                  currentDrawing:
+                                                      _currentDrawingPath,
+                                                  drawingColor:
+                                                      editor.currentColor,
+                                                  activeToolType:
+                                                      editor.activeTool,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+
+                                          // Layer 3: Text item widgets
+                                          ...editor
+                                              .getEditsForPage(_currentPage)
+                                              .whereType<TextEditItem>()
+                                              .map(
+                                                (item) => Positioned(
+                                                  left: item.position.dx * W,
+                                                  top: item.position.dy * H,
+                                                  child: GestureDetector(
+                                                    behavior:
+                                                        HitTestBehavior.opaque,
+                                                    onTap: () => editor
+                                                        .selectItem(item.id),
+                                                    onPanUpdate:
+                                                        editor.activeTool ==
+                                                            null
+                                                        ? (d) {
+                                                            editor.updateItemPosition(
+                                                              item.id,
+                                                              Offset(
+                                                                item
+                                                                        .position
+                                                                        .dx +
+                                                                    d.delta.dx /
+                                                                        W,
+                                                                item
+                                                                        .position
+                                                                        .dy +
+                                                                    d.delta.dy /
+                                                                        H,
+                                                              ),
+                                                            );
+                                                          }
+                                                        : null,
+                                                    onDoubleTap: () =>
+                                                        _editTextItem(
+                                                          context,
+                                                          editor,
+                                                          item,
                                                         ),
-                                                    decoration: BoxDecoration(
-                                                      color: Colors.white
-                                                          .withValues(
-                                                            alpha: 0.01,
-                                                          ), // Ensure hit detection
-                                                      border: Border.all(
-                                                        color:
-                                                            editor.selectedItemId ==
-                                                                item.id
-                                                            ? Colors.blue
-                                                            : Colors.blueAccent
-                                                                  .withValues(
-                                                                    alpha: 0.2,
-                                                                  ),
-                                                        width:
-                                                            editor.selectedItemId ==
-                                                                item.id
-                                                            ? 2
-                                                            : 1,
-                                                      ),
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                            4,
+                                                    child: Container(
+                                                      padding:
+                                                          const EdgeInsets.symmetric(
+                                                            horizontal: 8,
+                                                            vertical:
+                                                                12, // Larger vertical target for mobile
                                                           ),
-                                                    ),
-                                                    child: Text.rich(
-                                                      StyledTextController.buildRichTextSpan(
-                                                        item.text,
-                                                        TextStyle(
-                                                          color: item.color,
-                                                          fontSize: item.isH1
-                                                              ? 32
-                                                              : item.isH2
-                                                              ? 26
-                                                              : item.fontSize,
-                                                          fontWeight:
-                                                              (item.isBold ||
-                                                                  item.isH1 ||
-                                                                  item.isH2)
-                                                              ? FontWeight.bold
-                                                              : FontWeight
-                                                                    .normal,
-                                                          fontStyle:
-                                                              item.isItalic
-                                                              ? FontStyle.italic
-                                                              : FontStyle
-                                                                    .normal,
-                                                          decoration: TextDecoration.combine([
-                                                            if (item
-                                                                .isUnderline)
-                                                              TextDecoration
-                                                                  .underline,
-                                                            if (item
-                                                                .isStrikethrough)
-                                                              TextDecoration
-                                                                  .lineThrough,
-                                                          ]),
+                                                      decoration: BoxDecoration(
+                                                        color: Colors.white
+                                                            .withValues(
+                                                              alpha: 0.01,
+                                                            ), // Ensure hit detection
+                                                        border: Border.all(
+                                                          color:
+                                                              editor.selectedItemId ==
+                                                                  item.id
+                                                              ? Colors.blue
+                                                              : Colors
+                                                                    .blueAccent
+                                                                    .withValues(
+                                                                      alpha:
+                                                                          0.2,
+                                                                    ),
+                                                          width:
+                                                              editor.selectedItemId ==
+                                                                  item.id
+                                                              ? 2
+                                                              : 1,
                                                         ),
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                              4,
+                                                            ),
                                                       ),
-                                                      textAlign: item.textAlign,
+                                                      child: Text.rich(
+                                                        StyledTextController.buildRichTextSpan(
+                                                          item.text,
+                                                          TextStyle(
+                                                            color: item.color,
+                                                            fontSize: item.isH1
+                                                                ? 32
+                                                                : item.isH2
+                                                                ? 26
+                                                                : item.fontSize,
+                                                            fontWeight:
+                                                                (item.isBold ||
+                                                                    item.isH1 ||
+                                                                    item.isH2)
+                                                                ? FontWeight
+                                                                      .bold
+                                                                : FontWeight
+                                                                      .normal,
+                                                            fontStyle:
+                                                                item.isItalic
+                                                                ? FontStyle
+                                                                      .italic
+                                                                : FontStyle
+                                                                      .normal,
+                                                            decoration: TextDecoration.combine([
+                                                              if (item
+                                                                  .isUnderline)
+                                                                TextDecoration
+                                                                    .underline,
+                                                              if (item
+                                                                  .isStrikethrough)
+                                                                TextDecoration
+                                                                    .lineThrough,
+                                                            ]),
+                                                          ),
+                                                        ),
+                                                        textAlign:
+                                                            item.textAlign,
+                                                      ),
                                                     ),
                                                   ),
                                                 ),
                                               ),
-                                            ),
 
-                                        // Layer 4: Gesture capture — only when an edit tool is active
-                                        if (editor.activeTool != null)
-                                          Positioned.fill(
-                                            child: GestureDetector(
-                                              behavior: HitTestBehavior.opaque,
-                                              onPanStart: (d) {
-                                                if (editor.activeTool ==
-                                                    EditType.drawing) {
-                                                  setState(() {
-                                                    _currentDrawingPath = [
-                                                      Offset(
-                                                        d.localPosition.dx / W,
-                                                        d.localPosition.dy / H,
-                                                      ),
-                                                    ];
-                                                  });
-                                                }
-                                              },
-                                              onPanUpdate: (d) {
-                                                if (editor.activeTool ==
-                                                    EditType.drawing) {
-                                                  setState(() {
-                                                    _currentDrawingPath.add(
-                                                      Offset(
-                                                        d.localPosition.dx / W,
-                                                        d.localPosition.dy / H,
+                                          // Layer 4: Gesture capture — only when an edit tool is active
+                                          if (editor.activeTool != null)
+                                            Positioned.fill(
+                                              child: GestureDetector(
+                                                behavior:
+                                                    HitTestBehavior.opaque,
+                                                onPanStart: (d) {
+                                                  if (editor.activeTool ==
+                                                      EditType.drawing) {
+                                                    setState(() {
+                                                      _currentDrawingPath = [
+                                                        Offset(
+                                                          d.localPosition.dx /
+                                                              W,
+                                                          d.localPosition.dy /
+                                                              H,
+                                                        ),
+                                                      ];
+                                                    });
+                                                  }
+                                                },
+                                                onPanUpdate: (d) {
+                                                  if (editor.activeTool ==
+                                                      EditType.drawing) {
+                                                    setState(() {
+                                                      _currentDrawingPath.add(
+                                                        Offset(
+                                                          d.localPosition.dx /
+                                                              W,
+                                                          d.localPosition.dy /
+                                                              H,
+                                                        ),
+                                                      );
+                                                    });
+                                                  }
+                                                },
+                                                onPanEnd: (_) {
+                                                  if (_currentDrawingPath
+                                                      .isNotEmpty) {
+                                                    editor.addDrawing(
+                                                      List.from(
+                                                        _currentDrawingPath,
                                                       ),
                                                     );
-                                                  });
-                                                }
-                                              },
-                                              onPanEnd: (_) {
-                                                if (_currentDrawingPath
-                                                    .isNotEmpty) {
-                                                  editor.addDrawing(
-                                                    List.from(
-                                                      _currentDrawingPath,
-                                                    ),
-                                                  );
-                                                  setState(
-                                                    () => _currentDrawingPath =
-                                                        [],
-                                                  );
-                                                }
-                                              },
-                                              onTapUp: (d) {
-                                                if (editor.activeTool ==
-                                                    EditType.text) {
-                                                  // Immediate text entry
-                                                  final pos = Offset(
-                                                    d.localPosition.dx / W,
-                                                    d.localPosition.dy / H,
-                                                  );
+                                                    setState(
+                                                      () =>
+                                                          _currentDrawingPath =
+                                                              [],
+                                                    );
+                                                  }
+                                                },
+                                                onTapUp: (d) {
+                                                  if (editor.activeTool ==
+                                                      EditType.text) {
+                                                    // Immediate text entry
+                                                    final pos = Offset(
+                                                      d.localPosition.dx / W,
+                                                      d.localPosition.dy / H,
+                                                    );
 
-                                                  // Identify paragraph at tap location
-                                                  String initialText =
-                                                      "Enter text here";
-                                                  bool isH1 = false;
-                                                  bool isH2 = false;
+                                                    // Identify paragraph at tap location
+                                                    String initialText =
+                                                        "Enter text here";
+                                                    bool isH1 = false;
+                                                    bool isH2 = false;
 
-                                                  if (_pageTextBlocks != null) {
-                                                    final pageBlocks =
-                                                        _pageTextBlocks!
-                                                            .where(
-                                                              (b) =>
-                                                                  b.pageIndex ==
-                                                                  (_currentPage -
-                                                                      1),
-                                                            )
-                                                            .toList();
+                                                    if (_pageTextBlocks !=
+                                                        null) {
+                                                      final pageBlocks =
+                                                          _pageTextBlocks!
+                                                              .where(
+                                                                (b) =>
+                                                                    b.pageIndex ==
+                                                                    (_currentPage -
+                                                                        1),
+                                                              )
+                                                              .toList();
 
-                                                    // Find nearest block within a reasonable threshold
-                                                    PdfTextBlock? nearest;
-                                                    double minDist =
-                                                        0.5; // threshold
+                                                      // Find nearest block within a reasonable threshold
+                                                      PdfTextBlock? nearest;
+                                                      double minDist =
+                                                          0.5; // threshold
 
-                                                    for (var b in pageBlocks) {
-                                                      // Simple distance check in normalized space
-                                                      // We assume Letter size (612x792) as a baseline for hit-testing
-                                                      final dist =
-                                                          (b.bounds.center.dx /
-                                                                      612 -
-                                                                  pos.dx)
-                                                              .abs() +
-                                                          (b.bounds.center.dy /
-                                                                      792 -
-                                                                  pos.dy)
-                                                              .abs();
-                                                      if (dist < minDist) {
-                                                        minDist = dist;
-                                                        nearest = b;
+                                                      for (var b
+                                                          in pageBlocks) {
+                                                        // Simple distance check in normalized space
+                                                        // We assume Letter size (612x792) as a baseline for hit-testing
+                                                        final dist =
+                                                            (b.bounds.center.dx /
+                                                                        612 -
+                                                                    pos.dx)
+                                                                .abs() +
+                                                            (b.bounds.center.dy /
+                                                                        792 -
+                                                                    pos.dy)
+                                                                .abs();
+                                                        if (dist < minDist) {
+                                                          minDist = dist;
+                                                          nearest = b;
+                                                        }
+                                                      }
+                                                      if (nearest != null) {
+                                                        initialText = nearest
+                                                            .text
+                                                            .trim()
+                                                            .replaceAll(
+                                                              '\n',
+                                                              ' ',
+                                                            );
+                                                        isH1 = nearest.isH1;
+                                                        isH2 = nearest.isH2;
                                                       }
                                                     }
-                                                    if (nearest != null) {
-                                                      initialText = nearest.text
-                                                          .trim()
-                                                          .replaceAll(
-                                                            '\n',
-                                                            ' ',
-                                                          );
-                                                      isH1 = nearest.isH1;
-                                                      isH2 = nearest.isH2;
-                                                    }
-                                                  }
 
-                                                  _showImmediateTextDialog(
-                                                    context,
-                                                    editor,
-                                                    pos,
-                                                    initialText: initialText,
-                                                    isH1: isH1,
-                                                    isH2: isH2,
-                                                  );
-                                                  editor.setActiveTool(null);
-                                                }
-                                              },
+                                                    _showImmediateTextDialog(
+                                                      context,
+                                                      editor,
+                                                      pos,
+                                                      initialText: initialText,
+                                                      isH1: isH1,
+                                                      isH2: isH2,
+                                                    );
+                                                    editor.setActiveTool(null);
+                                                  }
+                                                },
+                                              ),
+                                            )
+                                          else
+                                            // Background tap to clear selection
+                                            Positioned.fill(
+                                              child: GestureDetector(
+                                                behavior:
+                                                    HitTestBehavior.translucent,
+                                                onTap: () =>
+                                                    editor.selectItem(null),
+                                              ),
                                             ),
-                                          )
-                                        else
-                                          // Background tap to clear selection
-                                          Positioned.fill(
-                                            child: GestureDetector(
-                                              behavior:
-                                                  HitTestBehavior.translucent,
-                                              onTap: () =>
-                                                  editor.selectItem(null),
-                                            ),
-                                          ),
-                                      ],
-                                    );
-                                  },
+                                        ],
+                                      );
+                                    },
+                                  ),
                                 ),
-                              ),
+                        ),
                       ),
                     ),
                   ),
-                ),
-                _buildToolbar(editor),
-              ],
-            ),
+                  _buildToolbar(editor),
+                ],
+              ),
+      ),
     );
+  }
+
+  Future<void> _savePdf({bool silent = false}) async {
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+    final editorSession = context.read<PdfEditorService>();
+    final pdfService = context.read<PDFService>();
+    final storageService = context.read<StorageService>();
+
+    if (!silent) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: const Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, color: Colors.orange),
+              SizedBox(width: 10),
+              Text('Review Changes'),
+            ],
+          ),
+          content: const Text(
+            'Please read through your changes carefully and make sure everything is correct and saved well before finalizing.',
+            style: TextStyle(fontSize: 15),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Wait, let me check'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.indigo,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              child: const Text('Yes, save now'),
+            ),
+          ],
+        ),
+      );
+
+      if (confirmed != true) return;
+    }
+
+    if (mounted) setState(() => _isLoading = true);
+    try {
+      final String currentTitle = widget.document.title;
+      final bool alreadyEdited = currentTitle.startsWith('Edited_');
+
+      final newTitle = alreadyEdited ? currentTitle : 'Edited_$currentTitle';
+
+      final String sourcePath =
+          widget.document.sourcePath ?? widget.document.filePath;
+
+      final newPath = alreadyEdited
+          ? widget.document.filePath
+          : await storageService.getNewFilePath(
+              newTitle.replaceAll('.pdf', ''),
+            );
+
+      await pdfService.flattenEditsToPdf(
+        sourcePath,
+        editorSession.edits,
+        newPath,
+      );
+
+      final updatedDoc = widget.document.copyWith(
+        title: newTitle,
+        filePath: newPath,
+        sourcePath: sourcePath,
+        overlayEdits: editorSession.edits,
+      );
+
+      await storageService.saveDocument(updatedDoc);
+
+      if (!mounted) return;
+      if (!silent) {
+        navigator.pop();
+      }
+    } catch (e) {
+      if (!mounted) return;
+      scaffoldMessenger.showSnackBar(
+        SnackBar(content: Text('Failed to save: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   Widget _buildToolbar(PdfEditorService editor) {
