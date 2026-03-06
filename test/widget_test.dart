@@ -17,11 +17,11 @@ void main() {
           Provider<PDFService>(create: (_) => PDFService()),
           Provider<PermissionService>(create: (_) => PermissionService()),
         ],
-        child: const PDFScannerApp(),
+        child: const PDFScannerApp(showOnboarding: false),
       ),
     );
 
     // Verify that the home screen title is displayed
-    expect(find.text('My Documents'), findsOneWidget);
+    expect(find.text('PDF Scanner'), findsOneWidget);
   });
 }

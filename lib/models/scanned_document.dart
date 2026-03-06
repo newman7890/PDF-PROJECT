@@ -1,4 +1,5 @@
 import 'dart:io';
+import '../models/pdf_edit_overlay.dart';
 
 /// Model representing a scanned document or an imported PDF.
 class ScannedDocument {
@@ -8,17 +9,23 @@ class ScannedDocument {
   final DateTime dateCreated;
   final bool isPdf;
 
+  final String? sourcePath;
   final bool? isScanned;
   final String? fileSize;
+  final Map<int, List<PdfEditItem>>? overlayEdits;
+  final String? extractedText;
 
   ScannedDocument({
     required this.id,
     required this.title,
     required this.filePath,
     required this.dateCreated,
+    this.sourcePath,
     this.isPdf = true,
     this.isScanned,
     this.fileSize,
+    this.overlayEdits,
+    this.extractedText,
   });
 
   /// Factory constructor to create a ScannedDocument from a Map (useful for local storage).
@@ -29,26 +36,44 @@ class ScannedDocument {
       filePath: map['filePath'],
       dateCreated: DateTime.parse(map['dateCreated']),
       isPdf: map['isPdf'] ?? true,
+      sourcePath: map['sourcePath'],
       isScanned: map['isScanned'],
       fileSize: map['fileSize'],
+      extractedText: map['extractedText'],
+      overlayEdits: map['overlayEdits'] != null
+          ? (map['overlayEdits'] as Map).map(
+              (key, value) => MapEntry(
+                int.parse(key.toString()),
+                (value as List)
+                    .map((item) => PdfEditItem.fromMap(item))
+                    .toList(),
+              ),
+            )
+          : null,
     );
   }
 
   ScannedDocument copyWith({
     String? title,
     String? filePath,
+    String? sourcePath,
     bool? isPdf,
     bool? isScanned,
     String? fileSize,
+    Map<int, List<PdfEditItem>>? overlayEdits,
+    String? extractedText,
   }) {
     return ScannedDocument(
       id: id,
       title: title ?? this.title,
       filePath: filePath ?? this.filePath,
       dateCreated: dateCreated,
+      sourcePath: sourcePath ?? this.sourcePath,
       isPdf: isPdf ?? this.isPdf,
       isScanned: isScanned ?? this.isScanned,
       fileSize: fileSize ?? this.fileSize,
+      overlayEdits: overlayEdits ?? this.overlayEdits,
+      extractedText: extractedText ?? this.extractedText,
     );
   }
 
@@ -58,10 +83,16 @@ class ScannedDocument {
       'id': id,
       'title': title,
       'filePath': filePath,
+      'sourcePath': sourcePath,
       'dateCreated': dateCreated.toIso8601String(),
       'isPdf': isPdf,
       'isScanned': isScanned,
       'fileSize': fileSize,
+      'extractedText': extractedText,
+      'overlayEdits': overlayEdits?.map(
+        (key, value) =>
+            MapEntry(key.toString(), value.map((e) => e.toMap()).toList()),
+      ),
     };
   }
 

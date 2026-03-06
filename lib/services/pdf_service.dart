@@ -36,7 +36,11 @@ class PDFService {
   }
 
   /// Extracts text blocks with bounding boxes from a native (digital) PDF.
-  Future<List<PdfTextBlock>> extractTextBlocksFromPdf(String pdfPath) async {
+  /// Falls back to OCR if no native text is found.
+  Future<List<PdfTextBlock>> extractTextBlocksFromPdf(
+    String pdfPath, {
+    required dynamic ocrService,
+  }) async {
     final bytes = await File(pdfPath).readAsBytes();
     final PdfDocument document = PdfDocument(inputBytes: bytes);
     final List<PdfTextBlock> blocks = [];
@@ -49,9 +53,84 @@ class PDFService {
           endPageIndex: i,
         );
         for (var line in lines) {
+          // Heuristic based on line height (points)
+          // Standard text is ~10-12pt with height ~12-14pt
+          bool isH1 = line.bounds.height > 18;
+          bool isAllCaps =
+              line.text.length >= 4 &&
+              line.text == line.text.toUpperCase() &&
+              RegExp(r'[A-Z]').hasMatch(line.text);
+          bool isH2 = (line.bounds.height > 14 || isAllCaps) && !isH1;
+
           blocks.add(
-            PdfTextBlock(text: line.text, bounds: line.bounds, pageIndex: i),
+            PdfTextBlock(
+              text: line.text,
+              bounds: line.bounds,
+              pageIndex: i,
+              isH1: isH1,
+              isH2: isH2,
+            ),
           );
+        }
+      }
+
+      // FALLBACK: If no blocks identified, try OCR
+      if (blocks.isEmpty) {
+        final dynamic_pdfx.PdfDocument pdfxDoc =
+            await dynamic_pdfx.PdfDocument.openFile(pdfPath);
+        try {
+          for (int i = 0; i < pdfxDoc.pagesCount; i++) {
+            final page = await pdfxDoc.getPage(i + 1);
+            final pageImage = await page.render(
+              width: page.width * 2,
+              height: page.height * 2,
+              format: dynamic_pdfx.PdfPageImageFormat.jpeg,
+              quality: 100,
+            );
+
+            if (pageImage != null) {
+              final tempFile = File('${Directory.systemTemp.path}/page_$i.jpg');
+              await tempFile.writeAsBytes(pageImage.bytes);
+
+              final ocrBlocks = await ocrService.extractBlocksFromImage(
+                tempFile,
+              );
+
+              // Calculate median height for heuristic
+              double totalHeight = 0;
+              int count = 0;
+              for (var b in ocrBlocks) {
+                totalHeight += b.boundingBox.height;
+                count++;
+              }
+              final medianHeight = count > 0 ? (totalHeight / count) : 12.0;
+
+              for (var b in ocrBlocks) {
+                final text = b.text.trim();
+                final avgLineHeight =
+                    b.boundingBox.height /
+                    (b.lines.isNotEmpty ? b.lines.length : 1);
+                bool isAllCaps =
+                    text.length >= 4 &&
+                    text == text.toUpperCase() &&
+                    RegExp(r'[A-Z]').hasMatch(text);
+
+                blocks.add(
+                  PdfTextBlock(
+                    text: text,
+                    bounds: b.boundingBox,
+                    pageIndex: i,
+                    isH1: avgLineHeight > medianHeight * 1.5,
+                    isH2: avgLineHeight > medianHeight * 1.2 || isAllCaps,
+                  ),
+                );
+              }
+              await tempFile.delete();
+            }
+            await page.close();
+          }
+        } finally {
+          await pdfxDoc.close();
         }
       }
       return blocks;
@@ -72,34 +151,58 @@ class PDFService {
       try {
         final PdfTextExtractor extractor = PdfTextExtractor(document);
         for (int i = 0; i < document.pages.count; i++) {
-          final lines = extractor.extractTextLines(
+          final List<TextLine> lines = extractor.extractTextLines(
             startPageIndex: i,
             endPageIndex: i,
           );
 
-          lines.sort((a, b) => a.bounds.top.compareTo(b.bounds.top));
+          if (lines.isEmpty) continue;
 
-          List<List<TextLine>> clusteredLines = [];
-          for (var line in lines) {
-            if (clusteredLines.isEmpty) {
-              clusteredLines.add([line]);
-            } else {
-              var lastCluster = clusteredLines.last;
-              // A threshold of 5-8 points usually captures the same visual line
-              if ((line.bounds.top - lastCluster.first.bounds.top).abs() < 7) {
-                lastCluster.add(line);
+          // Apply True Recursive XY-cut
+          final sortedLines = _recursiveXYCut(lines);
+
+          // Build text from sorted lines with smart proximity joining
+          for (int k = 0; k < sortedLines.length; k++) {
+            final current = sortedLines[k];
+            var text = current.text.trim();
+
+            // Header detection heuristic based on line height
+            bool isAllCaps =
+                text.length >= 4 &&
+                text == text.toUpperCase() &&
+                RegExp(r'[A-Z]').hasMatch(text);
+            if (current.bounds.height > 18) {
+              text = "[H1] $text";
+            } else if (current.bounds.height > 14 || isAllCaps) {
+              text = "[H2] $text";
+            }
+
+            nativeText += text;
+
+            if (k < sortedLines.length - 1) {
+              final next = sortedLines[k + 1];
+
+              // Vertical proximity
+              double verticalGap = next.bounds.top - current.bounds.bottom;
+              // Same visual line check
+              bool sameLine =
+                  (next.bounds.top - current.bounds.top).abs() <
+                  (current.bounds.height * 0.4);
+
+              // Join with a space if it's on the same line OR if the line doesn't end in terminal punctuation
+              bool endsInStop = RegExp(r'[.!?:]$').hasMatch(text);
+
+              if (sameLine ||
+                  (!endsInStop && verticalGap < current.bounds.height * 1.5)) {
+                nativeText += " ";
+              } else if (verticalGap < current.bounds.height * 1.5) {
+                nativeText += "\n";
               } else {
-                clusteredLines.add([line]);
+                nativeText += "\n\n";
               }
             }
           }
-
-          for (var cluster in clusteredLines) {
-            cluster.sort((a, b) => a.bounds.left.compareTo(b.bounds.left));
-            // Joining with multiple spaces to preserve some "column" feel
-            nativeText += '${cluster.map((l) => l.text).join('   ')}\n';
-          }
-          nativeText += '\n[PAGE ${i + 1}]\n\n';
+          nativeText += "\n\n";
         }
         nativeText = nativeText.trim();
       } finally {
@@ -126,9 +229,11 @@ class PDFService {
                 final tempFile = File('${tempDir.path}/page_$i.jpg');
                 await tempFile.writeAsBytes(pageImage.bytes);
 
+                // Filter out border noise: limit OCR to central 90% of page
                 final text = await ocrService.extractTextFromImage(tempFile);
-                if (text.trim().isNotEmpty) {
-                  ocrText += "$text\n\n[PAGE $i]\n\n";
+                final cleanText = _cleanNoiseAndHallucinations(text);
+                if (cleanText.trim().isNotEmpty) {
+                  ocrText += "$cleanText\n\n";
                 }
 
                 await tempFile.delete();
@@ -147,22 +252,6 @@ class PDFService {
     } catch (e) {
       debugPrint("Extraction failed: $e");
       return "";
-    }
-  }
-
-  /// Checks if the PDF is primarily image-based.
-  Future<bool> isImageBasedPdf(String pdfPath) async {
-    try {
-      final bytes = await File(pdfPath).readAsBytes();
-      final PdfDocument document = PdfDocument(inputBytes: bytes);
-      final String text = PdfTextExtractor(document).extractText().trim();
-      document.dispose();
-
-      if (text.isEmpty) return true;
-      final alphaCount = text.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '').length;
-      return alphaCount <= 15 && alphaCount <= text.length * 0.4;
-    } catch (e) {
-      return true;
     }
   }
 
@@ -187,6 +276,7 @@ class PDFService {
 
     double x = margin;
     double maxLineHeight = 18.0;
+    bool ignoreNextNewline = false;
 
     for (var chunk in chunks) {
       final font = PdfStandardFont(
@@ -208,6 +298,7 @@ class PDFService {
           Offset(pageWidth - margin, y + 5),
         );
         y += 15.0;
+        ignoreNextNewline = true;
         if (y > pageHeight - margin) {
           page = document.pages.add();
           y = margin;
@@ -216,7 +307,16 @@ class PDFService {
       }
 
       // Split chunk by newlines to respect manual line breaks
-      final List<String> linesInChunk = chunk.text.split('\n');
+      List<String> linesInChunk = chunk.text.split('\n');
+
+      if (ignoreNextNewline &&
+          linesInChunk.isNotEmpty &&
+          linesInChunk.first.isEmpty) {
+        linesInChunk.removeAt(0);
+      }
+      ignoreNextNewline = false;
+
+      if (linesInChunk.isEmpty) continue;
 
       for (int lineIdx = 0; lineIdx < linesInChunk.length; lineIdx++) {
         final lineText = linesInChunk[lineIdx];
@@ -259,20 +359,30 @@ class PDFService {
               currentStr.isNotEmpty) {
             // Draw current line buffer
             final Size cSize = font.measureString(currentStr);
+            double drawX = x;
+            if (chunk.isCentered) {
+              drawX = (pageWidth - cSize.width) / 2;
+            }
+
             page.graphics.drawString(
               currentStr,
               font,
               brush: PdfSolidBrush(chunk.color),
-              bounds: Rect.fromLTWH(x, y, cSize.width + 2, maxLineHeight + 10),
+              bounds: Rect.fromLTWH(
+                drawX,
+                y,
+                cSize.width + 2,
+                maxLineHeight + 10,
+              ),
             );
 
             // Underline/Strike handling
             if (chunk.isUnderline) {
               page.graphics.drawLine(
                 PdfPen(chunk.color, width: 0.8),
-                Offset(x, y + chunk.fontSize * 0.95),
+                Offset(drawX, y + chunk.fontSize * 0.95),
                 Offset(
-                  x + font.measureString(currentStr.trimRight()).width,
+                  drawX + font.measureString(currentStr.trimRight()).width,
                   y + chunk.fontSize * 0.95,
                 ),
               );
@@ -280,9 +390,9 @@ class PDFService {
             if (chunk.isStrike) {
               page.graphics.drawLine(
                 PdfPen(chunk.color, width: 0.8),
-                Offset(x, y + chunk.fontSize * 0.5),
+                Offset(drawX, y + chunk.fontSize * 0.5),
                 Offset(
-                  x + font.measureString(currentStr.trimRight()).width,
+                  drawX + font.measureString(currentStr.trimRight()).width,
                   y + chunk.fontSize * 0.5,
                 ),
               );
@@ -302,19 +412,40 @@ class PDFService {
 
         if (currentStr.isNotEmpty) {
           final Size cSize = font.measureString(currentStr);
+
+          // If centered and not at start of line, force a newline first
+          if (chunk.isCentered && x > margin) {
+            y += maxLineHeight;
+            x = margin;
+            if (y > pageHeight - margin) {
+              page = document.pages.add();
+              y = margin;
+            }
+          }
+
+          double drawX = x;
+          if (chunk.isCentered) {
+            drawX = (pageWidth - cSize.width) / 2;
+          }
+
           page.graphics.drawString(
             currentStr,
             font,
             brush: PdfSolidBrush(chunk.color),
-            bounds: Rect.fromLTWH(x, y, cSize.width + 2, maxLineHeight + 10),
+            bounds: Rect.fromLTWH(
+              drawX,
+              y,
+              cSize.width + 2,
+              maxLineHeight + 10,
+            ),
           );
 
           if (chunk.isUnderline) {
             page.graphics.drawLine(
               PdfPen(chunk.color, width: 0.8),
-              Offset(x, y + chunk.fontSize * 0.95),
+              Offset(drawX, y + chunk.fontSize * 0.95),
               Offset(
-                x + font.measureString(currentStr.trimRight()).width,
+                drawX + font.measureString(currentStr.trimRight()).width,
                 y + chunk.fontSize * 0.95,
               ),
             );
@@ -322,14 +453,23 @@ class PDFService {
           if (chunk.isStrike) {
             page.graphics.drawLine(
               PdfPen(chunk.color, width: 0.8),
-              Offset(x, y + chunk.fontSize * 0.5),
+              Offset(drawX, y + chunk.fontSize * 0.5),
               Offset(
-                x + font.measureString(currentStr.trimRight()).width,
+                drawX + font.measureString(currentStr.trimRight()).width,
                 y + chunk.fontSize * 0.5,
               ),
             );
           }
-          x += cSize.width;
+
+          if (chunk.isCentered) {
+            y += maxLineHeight;
+            x = margin;
+            if (lineIdx == linesInChunk.length - 1) {
+              ignoreNextNewline = true;
+            }
+          } else {
+            x += cSize.width;
+          }
         }
       }
     }
@@ -427,8 +567,9 @@ class PDFService {
     double currentFontSize,
     PdfColor currentColor,
     bool currentUnderline,
-    bool currentStrike,
-  ) {
+    bool currentStrike, {
+    bool isCentered = false,
+  }) {
     if (text.isEmpty) return [];
     final List<StyledChunk> chunks = [];
 
@@ -465,6 +606,7 @@ class PDFService {
             color: currentColor,
             isUnderline: currentUnderline,
             isStrike: currentStrike,
+            isCentered: isCentered,
           ),
         );
       }
@@ -512,6 +654,7 @@ class PDFService {
             currentColor,
             currentUnderline,
             currentStrike,
+            isCentered: true,
           ),
         );
       } else if (match.group(3) != null) {
@@ -531,6 +674,7 @@ class PDFService {
             currentColor,
             currentUnderline,
             currentStrike,
+            isCentered: true,
           ),
         );
       } else if (match.group(4) != null) {
@@ -550,6 +694,7 @@ class PDFService {
             currentColor,
             currentUnderline,
             currentStrike,
+            isCentered: true,
           ),
         );
       } else if (match.group(5) != null) {
@@ -664,6 +809,7 @@ class PDFService {
           color: currentColor,
           isUnderline: currentUnderline,
           isStrike: currentStrike,
+          isCentered: isCentered,
         ),
       );
     }
@@ -813,10 +959,8 @@ class PDFService {
 
   bool _isMeaningful(String text) {
     if (text.isEmpty) return false;
-
-    // Remove page markers [PAGE X] before checking content
-    final cleanText = text.replaceAll(RegExp(r'\[PAGE \d+\]'), '').trim();
-    if (cleanText.length < 10) return false;
+    final cleanText = _cleanNoiseAndHallucinations(text).trim();
+    if (cleanText.length < 5) return false;
 
     // Check alphanumeric ratio on non-metadata text
     int alpha = 0;
@@ -835,9 +979,120 @@ class PDFService {
     if (totalNonSpace == 0) return false;
     // Ratio of alphanumeric to total non-space chars
     final ratio = alpha / totalNonSpace;
+    return ratio > 0.4 && alpha > 10;
+  }
 
-    // Scanned PDFs often return gibberish native text (very low ratio)
-    return ratio > 0.35 && alpha > 10;
+  /// Strips out known OCR hallucinations and nonsensical short strings.
+  String _cleanNoiseAndHallucinations(String text) {
+    if (text.isEmpty) return "";
+
+    // 1. Remove common "phantom" words (case-insensitive)
+    final wordsToFilter = RegExp(
+      r'\b(aah|ae|avoe|aa|ii|oo|uu|aeo|aei|aot)\b',
+      caseSensitive: false,
+    );
+
+    // 2. Remove very short nonsensical blocks (e.g. "at" by itself on its own line)
+    // and lines that are purely symbols
+    return text
+        .split('\n')
+        .where((line) {
+          final trimmed = line.trim();
+          if (trimmed.isEmpty) {
+            return true;
+          }
+
+          // Strip known hallucinated exact lines
+          final lower = trimmed.toLowerCase();
+          if (lower == 'at' || lower == '@') {
+            return false;
+          }
+
+          // If the line consists only of one or two noise words, skip it
+          final cleanLine = trimmed.replaceAll(wordsToFilter, '').trim();
+          if (cleanLine.isEmpty && trimmed.length <= 5) {
+            return false;
+          }
+
+          // Skip lines that are purely non-alphanumeric noise
+          if (trimmed.length < 3 && !RegExp(r'[a-zA-Z0-9]').hasMatch(trimmed)) {
+            return false;
+          }
+
+          return true;
+        })
+        .join('\n')
+        .replaceAll(wordsToFilter, '')
+        .replaceAll(RegExp(r' +'), ' ')
+        .trim();
+  }
+
+  /// True Recursive XY-Cut for PDF TextLines.
+  List<TextLine> _recursiveXYCut(List<TextLine> lines) {
+    if (lines.length <= 1) return lines;
+
+    // --- Try Horizontal Splits First ---
+    final sortedByTop = List<TextLine>.from(lines);
+    sortedByTop.sort((a, b) => a.bounds.top.compareTo(b.bounds.top));
+
+    for (int i = 0; i < sortedByTop.length - 1; i++) {
+      double splitY =
+          (sortedByTop[i].bounds.bottom + sortedByTop[i + 1].bounds.top) / 2;
+
+      bool isClearCut = true;
+      for (var l in lines) {
+        if (l.bounds.top < splitY && l.bounds.bottom > splitY) {
+          isClearCut = false;
+          break;
+        }
+      }
+
+      double gap = sortedByTop[i + 1].bounds.top - sortedByTop[i].bounds.bottom;
+      if (isClearCut && gap > 0.5) {
+        final top = lines.where((l) => l.bounds.bottom <= splitY).toList();
+        final bottom = lines.where((l) => l.bounds.top >= splitY).toList();
+        if (top.isNotEmpty && bottom.isNotEmpty) {
+          return [..._recursiveXYCut(top), ..._recursiveXYCut(bottom)];
+        }
+      }
+    }
+
+    // --- Try Vertical Splits Next ---
+    final sortedByLeft = List<TextLine>.from(lines);
+    sortedByLeft.sort((a, b) => a.bounds.left.compareTo(b.bounds.left));
+
+    for (int i = 0; i < sortedByLeft.length - 1; i++) {
+      double splitX =
+          (sortedByLeft[i].bounds.right + sortedByLeft[i + 1].bounds.left) / 2;
+
+      bool isClearCut = true;
+      for (var l in lines) {
+        if (l.bounds.left < splitX && l.bounds.right > splitX) {
+          isClearCut = false;
+          break;
+        }
+      }
+
+      double gap =
+          sortedByLeft[i + 1].bounds.left - sortedByLeft[i].bounds.right;
+      if (isClearCut && gap > 15) {
+        // Threshold for gutter
+        final left = lines.where((l) => l.bounds.right <= splitX).toList();
+        final right = lines.where((l) => l.bounds.left >= splitX).toList();
+        if (left.isNotEmpty && right.isNotEmpty) {
+          return [..._recursiveXYCut(left), ..._recursiveXYCut(right)];
+        }
+      }
+    }
+
+    // Fallback: Reading order
+    lines.sort((a, b) {
+      int cmp = a.bounds.top.compareTo(b.bounds.top);
+      if (cmp != 0) return cmp;
+      return a.bounds.left.compareTo(b.bounds.left);
+    });
+
+    return lines;
   }
 }
 
@@ -848,6 +1103,7 @@ class StyledChunk {
   final PdfColor color;
   final bool isUnderline;
   final bool isStrike;
+  final bool isCentered;
 
   StyledChunk({
     required this.text,
@@ -856,6 +1112,7 @@ class StyledChunk {
     required this.color,
     this.isUnderline = false,
     this.isStrike = false,
+    this.isCentered = false,
   });
 
   StyledChunk copyWith({
@@ -865,6 +1122,7 @@ class StyledChunk {
     PdfColor? color,
     bool? isUnderline,
     bool? isStrike,
+    bool? isCentered,
   }) {
     return StyledChunk(
       text: text ?? this.text,
@@ -873,6 +1131,7 @@ class StyledChunk {
       color: color ?? this.color,
       isUnderline: isUnderline ?? this.isUnderline,
       isStrike: isStrike ?? this.isStrike,
+      isCentered: isCentered ?? this.isCentered,
     );
   }
 }
@@ -881,9 +1140,14 @@ class PdfTextBlock {
   final String text;
   final Rect bounds;
   final int pageIndex;
+  final bool isH1;
+  final bool isH2;
+
   PdfTextBlock({
     required this.text,
     required this.bounds,
     required this.pageIndex,
+    this.isH1 = false,
+    this.isH2 = false,
   });
 }

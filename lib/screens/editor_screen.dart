@@ -7,6 +7,7 @@ import '../services/pdf_editor_service.dart';
 import '../services/storage_service.dart';
 import '../services/pdf_service.dart';
 import '../services/rich_text_service.dart';
+import '../services/ocr_service.dart';
 
 class EditorScreen extends StatefulWidget {
   final ScannedDocument document;
@@ -25,21 +26,29 @@ class _EditorScreenState extends State<EditorScreen> {
   bool _isLoading = true;
 
   List<Offset> _currentDrawingPath = [];
+  List<PdfTextBlock>? _pageTextBlocks; // New field for text blocks
 
   @override
   void initState() {
     super.initState();
     // Reset tool selection and clear previous session edits
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<PdfEditorService>().setActiveTool(null);
+      final editor = context.read<PdfEditorService>();
+      editor.setActiveTool(null);
+      if (widget.document.overlayEdits != null) {
+        editor.loadEdits(widget.document.overlayEdits!);
+      } else {
+        editor.clearAll();
+      }
     });
     _loadPdf();
+    _loadPageText(); // Load text blocks
   }
 
   Future<void> _loadPdf() async {
     try {
       _pdfDocument = await dynamic_pdfx.PdfDocument.openFile(
-        widget.document.filePath,
+        widget.document.sourcePath ?? widget.document.filePath,
       );
       _totalPages = _pdfDocument!.pagesCount;
       await _renderPage(_currentPage);
@@ -50,6 +59,22 @@ class _EditorScreenState extends State<EditorScreen> {
           context,
         ).showSnackBar(SnackBar(content: Text('Failed to load PDF: $e')));
       }
+    }
+  }
+
+  Future<void> _loadPageText() async {
+    try {
+      final pdfService = context.read<PDFService>();
+      final ocrService = context.read<OCRService>();
+      final blocks = await pdfService.extractTextBlocksFromPdf(
+        widget.document.sourcePath ?? widget.document.filePath,
+        ocrService: ocrService,
+      );
+      if (mounted) {
+        setState(() => _pageTextBlocks = blocks);
+      }
+    } catch (e) {
+      debugPrint("Failed to load text blocks: $e");
     }
   }
 
@@ -150,6 +175,73 @@ class _EditorScreenState extends State<EditorScreen> {
     );
   }
 
+  void _showImmediateTextDialog(
+    BuildContext context,
+    PdfEditorService editor,
+    Offset position, {
+    String initialText = "Enter text here",
+    bool isH1 = false,
+    bool isH2 = false,
+  }) {
+    final textController = TextEditingController(text: initialText);
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.text_fields_rounded, color: Colors.indigo),
+            SizedBox(width: 10),
+            Text('Add Text to PDF', style: TextStyle(fontSize: 18)),
+          ],
+        ),
+        content: TextField(
+          controller: textController,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: 'Type something...',
+            border: UnderlineInputBorder(),
+          ),
+          style: TextStyle(
+            fontSize: isH1 ? 32 : (isH2 ? 26 : editor.currentFontSize),
+            fontWeight: (isH1 || isH2 || editor.isBold)
+                ? FontWeight.bold
+                : FontWeight.normal,
+            fontStyle: editor.isItalic ? FontStyle.italic : FontStyle.normal,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (textController.text.isNotEmpty) {
+                editor.addTextEdit(
+                  position,
+                  initialText: textController.text,
+                  isH1: isH1,
+                  isH2: isH2,
+                );
+              }
+              Navigator.pop(ctx);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.indigo,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            child: const Text('Add Text'),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final editor = context.watch<PdfEditorService>();
@@ -177,26 +269,39 @@ class _EditorScreenState extends State<EditorScreen> {
                 final pdfService = context.read<PDFService>();
                 final storageService = context.read<StorageService>();
 
-                final newPath = await storageService.getNewFilePath(
-                  'Edited_${widget.document.title}',
-                );
+                final String currentTitle = widget.document.title;
+                final bool alreadyEdited = currentTitle.startsWith('Edited_');
+
+                final newTitle = alreadyEdited
+                    ? currentTitle
+                    : 'Edited_$currentTitle';
+
+                final String sourcePath =
+                    widget.document.sourcePath ?? widget.document.filePath;
+
+                final newPath = alreadyEdited
+                    ? widget.document.filePath
+                    : await storageService.getNewFilePath(
+                        newTitle.replaceAll('.pdf', ''),
+                      );
 
                 await pdfService.flattenEditsToPdf(
-                  widget.document.filePath,
+                  sourcePath,
                   editorSession.edits,
                   newPath,
                 );
 
-                final newDoc = ScannedDocument(
-                  id: DateTime.now().toIso8601String(),
-                  title: 'Edited_${widget.document.title}',
+                final updatedDoc = widget.document.copyWith(
+                  title: newTitle,
                   filePath: newPath,
-                  dateCreated: DateTime.now(),
-                  isPdf: true,
+                  sourcePath: sourcePath,
+                  overlayEdits: editorSession.edits,
                 );
 
-                await storageService.saveDocument(newDoc);
-                editorSession.clearAll();
+                await storageService.saveDocument(updatedDoc);
+                // No longer clearing all to allow continued editing if needed,
+                // but we pop the screen anyway.
+                // editorSession.clearAll();
 
                 if (!mounted) return;
                 navigator.pop();
@@ -241,25 +346,35 @@ class _EditorScreenState extends State<EditorScreen> {
                                     final H = constraints.maxHeight;
                                     return Stack(
                                       children: [
-                                        // Layer 1: PDF page image
+                                        // Layer 1: PDF page image (cached, never repaints during drawing)
                                         Positioned.fill(
-                                          child: Image.memory(
-                                            _currentPageImage!.bytes,
-                                            fit: BoxFit.fill,
+                                          child: RepaintBoundary(
+                                            child: Image.memory(
+                                              _currentPageImage!.bytes,
+                                              fit: BoxFit.fill,
+                                              gaplessPlayback: true,
+                                            ),
                                           ),
                                         ),
 
-                                        // Layer 2: Drawing strokes overlay
+                                        // Layer 2: Drawing strokes overlay (isolated repaint)
                                         Positioned.fill(
-                                          child: CustomPaint(
-                                            painter: _OverlayPainter(
-                                              edits: editor.getEditsForPage(
-                                                _currentPage,
+                                          child: RepaintBoundary(
+                                            child: CustomPaint(
+                                              isComplex: true,
+                                              willChange: _currentDrawingPath
+                                                  .isNotEmpty,
+                                              painter: _OverlayPainter(
+                                                edits: editor.getEditsForPage(
+                                                  _currentPage,
+                                                ),
+                                                currentDrawing:
+                                                    _currentDrawingPath,
+                                                drawingColor:
+                                                    editor.currentColor,
+                                                activeToolType:
+                                                    editor.activeTool,
                                               ),
-                                              currentDrawing:
-                                                  _currentDrawingPath,
-                                              drawingColor: editor.currentColor,
-                                              activeToolType: editor.activeTool,
                                             ),
                                           ),
                                         ),
@@ -420,11 +535,70 @@ class _EditorScreenState extends State<EditorScreen> {
                                               onTapUp: (d) {
                                                 if (editor.activeTool ==
                                                     EditType.text) {
-                                                  editor.addTextEdit(
-                                                    Offset(
-                                                      d.localPosition.dx / W,
-                                                      d.localPosition.dy / H,
-                                                    ),
+                                                  // Immediate text entry
+                                                  final pos = Offset(
+                                                    d.localPosition.dx / W,
+                                                    d.localPosition.dy / H,
+                                                  );
+
+                                                  // Identify paragraph at tap location
+                                                  String initialText =
+                                                      "Enter text here";
+                                                  bool isH1 = false;
+                                                  bool isH2 = false;
+
+                                                  if (_pageTextBlocks != null) {
+                                                    final pageBlocks =
+                                                        _pageTextBlocks!
+                                                            .where(
+                                                              (b) =>
+                                                                  b.pageIndex ==
+                                                                  (_currentPage -
+                                                                      1),
+                                                            )
+                                                            .toList();
+
+                                                    // Find nearest block within a reasonable threshold
+                                                    PdfTextBlock? nearest;
+                                                    double minDist =
+                                                        0.5; // threshold
+
+                                                    for (var b in pageBlocks) {
+                                                      // Simple distance check in normalized space
+                                                      // We assume Letter size (612x792) as a baseline for hit-testing
+                                                      final dist =
+                                                          (b.bounds.center.dx /
+                                                                      612 -
+                                                                  pos.dx)
+                                                              .abs() +
+                                                          (b.bounds.center.dy /
+                                                                      792 -
+                                                                  pos.dy)
+                                                              .abs();
+                                                      if (dist < minDist) {
+                                                        minDist = dist;
+                                                        nearest = b;
+                                                      }
+                                                    }
+                                                    if (nearest != null) {
+                                                      initialText = nearest.text
+                                                          .trim()
+                                                          .replaceAll(
+                                                            '\n',
+                                                            ' ',
+                                                          );
+                                                      isH1 = nearest.isH1;
+                                                      isH2 = nearest.isH2;
+                                                    }
+                                                  }
+
+                                                  _showImmediateTextDialog(
+                                                    context,
+                                                    editor,
+                                                    pos,
+                                                    initialText: initialText,
+                                                    isH1: isH1,
+                                                    isH2: isH2,
                                                   );
                                                   editor.setActiveTool(null);
                                                 }
@@ -499,7 +673,7 @@ class _EditorScreenState extends State<EditorScreen> {
                   ),
                   Expanded(
                     child: _ToolButton(
-                      icon: Icons.text_fields,
+                      icon: Icons.text_fields_rounded,
                       label: 'Text',
                       isActive: editor.activeTool == EditType.text,
                       onTap: () => editor.setActiveTool(EditType.text),
@@ -507,7 +681,7 @@ class _EditorScreenState extends State<EditorScreen> {
                   ),
                   Expanded(
                     child: _ToolButton(
-                      icon: Icons.edit,
+                      icon: Icons.brush_rounded,
                       label: 'Draw',
                       isActive: editor.activeTool == EditType.drawing,
                       onTap: () => editor.setActiveTool(EditType.drawing),
@@ -515,7 +689,7 @@ class _EditorScreenState extends State<EditorScreen> {
                   ),
                   Expanded(
                     child: _ToolButton(
-                      icon: Icons.delete_outline,
+                      icon: Icons.delete_outline_rounded,
                       label: 'Delete',
                       isActive: false,
                       onTap: () {
@@ -536,7 +710,7 @@ class _EditorScreenState extends State<EditorScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   IconButton(
-                    icon: const Icon(Icons.chevron_left),
+                    icon: const Icon(Icons.chevron_left_rounded),
                     onPressed: _previousPage,
                   ),
                   Text(
@@ -547,7 +721,7 @@ class _EditorScreenState extends State<EditorScreen> {
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.chevron_right),
+                    icon: const Icon(Icons.chevron_right_rounded),
                     onPressed: _nextPage,
                   ),
                 ],
@@ -626,7 +800,7 @@ class _EditorScreenState extends State<EditorScreen> {
               if (isText) ...[
                 IconButton(
                   icon: Icon(
-                    Icons.format_bold,
+                    Icons.format_bold_rounded,
                     color: editor.isBold ? Colors.indigo : Colors.grey,
                   ),
                   onPressed: editor.toggleBold,
@@ -634,7 +808,7 @@ class _EditorScreenState extends State<EditorScreen> {
                 ),
                 IconButton(
                   icon: Icon(
-                    Icons.format_italic,
+                    Icons.format_italic_rounded,
                     color: editor.isItalic ? Colors.indigo : Colors.grey,
                   ),
                   onPressed: editor.toggleItalic,
@@ -642,7 +816,7 @@ class _EditorScreenState extends State<EditorScreen> {
                 ),
                 IconButton(
                   icon: Icon(
-                    Icons.format_underlined,
+                    Icons.format_underlined_rounded,
                     color: editor.isUnderline ? Colors.indigo : Colors.grey,
                   ),
                   onPressed: editor.toggleUnderline,
@@ -650,32 +824,10 @@ class _EditorScreenState extends State<EditorScreen> {
                 ),
                 IconButton(
                   icon: Icon(
-                    Icons.format_strikethrough,
+                    Icons.format_strikethrough_rounded,
                     color: editor.isStrikethrough ? Colors.indigo : Colors.grey,
                   ),
                   onPressed: editor.toggleStrikethrough,
-                  visualDensity: VisualDensity.compact,
-                ),
-                IconButton(
-                  icon: Text(
-                    'H1',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: editor.isH1 ? Colors.indigo : Colors.grey,
-                    ),
-                  ),
-                  onPressed: editor.toggleH1,
-                  visualDensity: VisualDensity.compact,
-                ),
-                IconButton(
-                  icon: Text(
-                    'H2',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: editor.isH2 ? Colors.indigo : Colors.grey,
-                    ),
-                  ),
-                  onPressed: editor.toggleH2,
                   visualDensity: VisualDensity.compact,
                 ),
               ],
@@ -692,12 +844,14 @@ class _EditorScreenState extends State<EditorScreen> {
                     value: editor.currentFontSize,
                     min: 8,
                     max: 48,
+                    activeColor: Colors.indigo,
+                    inactiveColor: Colors.indigo.withValues(alpha: 0.1),
                     onChanged: editor.setFontSize,
                   ),
                 ),
               ],
               if (isDraw) ...[
-                const Icon(Icons.line_weight, size: 20),
+                const Icon(Icons.line_weight_rounded, size: 20),
                 const SizedBox(width: 8),
                 const Text('Width:'),
                 Expanded(
@@ -705,6 +859,8 @@ class _EditorScreenState extends State<EditorScreen> {
                     value: editor.currentStrokeWidth,
                     min: 1,
                     max: 20,
+                    activeColor: Colors.indigo,
+                    inactiveColor: Colors.indigo.withValues(alpha: 0.1),
                     onChanged: editor.setStrokeWidth,
                   ),
                 ),
@@ -734,23 +890,29 @@ class _ToolButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(12),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
         decoration: BoxDecoration(
           color: isActive
-              ? Colors.indigo.withValues(alpha: 0.2)
+              ? Colors.indigo.withValues(alpha: 0.15)
               : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(12),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, color: isActive ? Colors.indigo : Colors.grey[700]),
+            Icon(
+              icon,
+              color: isActive ? Colors.indigo : Colors.grey[700],
+              size: 24,
+            ),
+            const SizedBox(height: 4),
             Text(
               label,
               style: TextStyle(
                 fontSize: 10,
+                fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
                 color: isActive ? Colors.indigo : Colors.grey[700],
               ),
             ),
@@ -801,11 +963,11 @@ class _OverlayPainter extends CustomPainter {
       }
     }
 
-    // Draw the in-progress stroke
-    if (currentDrawing.length > 1) {
+    // Draw current active stroke
+    if (activeToolType == EditType.drawing && currentDrawing.length > 1) {
       final paint = Paint()
         ..color = drawingColor
-        ..strokeWidth = 3.0
+        ..strokeWidth = 2.0
         ..strokeCap = StrokeCap.round
         ..style = PaintingStyle.stroke;
 
@@ -826,59 +988,5 @@ class _OverlayPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _OverlayPainter old) => true;
-}
-
-class SignaturePainterHelper extends CustomPainter {
-  final List<Offset> points;
-  final Color color;
-  final double strokeWidth;
-
-  SignaturePainterHelper(this.points, this.color, this.strokeWidth);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (points.isEmpty) return;
-
-    // Find bounds to normalize
-    double minX = points[0].dx;
-    double minY = points[0].dy;
-    double maxX = points[0].dx;
-    double maxY = points[0].dy;
-
-    for (var p in points) {
-      if (p.dx < minX) minX = p.dx;
-      if (p.dy < minY) minY = p.dy;
-      if (p.dx > maxX) maxX = p.dx;
-      if (p.dy > maxY) maxY = p.dy;
-    }
-
-    double sigWidth = maxX - minX;
-    double sigHeight = maxY - minY;
-    if (sigWidth == 0) sigWidth = 1;
-    if (sigHeight == 0) sigHeight = 1;
-
-    final paint = Paint()
-      ..color = color
-      ..strokeCap = StrokeCap.round
-      ..strokeWidth = strokeWidth
-      ..style = PaintingStyle.stroke;
-
-    final List<Offset> normalized = points.map((p) {
-      return Offset(
-        (p.dx - minX) / sigWidth * size.width,
-        (p.dy - minY) / sigHeight * size.height,
-      );
-    }).toList();
-
-    for (int i = 0; i < normalized.length - 1; i++) {
-      // Check if this is a break in the signature (if we had nulls, but here we only have List<Offset>)
-      // In SignaturePadScreen we add null on PanEnd, but PdfEditorService.addSignature filters them.
-      // For now we assume a continuous line or handle distance jumps if needed.
-      canvas.drawLine(normalized[i], normalized[i + 1], paint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(SignaturePainterHelper oldDelegate) => true;
+  bool shouldRepaint(covariant _OverlayPainter oldDelegate) => true;
 }

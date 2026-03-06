@@ -9,9 +9,13 @@ import 'services/pdf_editor_service.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'screens/home_screen.dart';
+import 'screens/onboarding_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  final prefs = await SharedPreferences.getInstance();
+  final bool showOnboarding = !(prefs.getBool('onboarding_shown') ?? false);
 
   runApp(
     MultiProvider(
@@ -30,26 +34,55 @@ void main() async {
           create: (_) => ImageProcessingService(),
         ),
       ],
-      child: const PDFScannerApp(),
+      child: PDFScannerApp(showOnboarding: showOnboarding),
     ),
   );
 }
 
 class PDFScannerApp extends StatelessWidget {
-  const PDFScannerApp({super.key});
+  final bool showOnboarding;
+  const PDFScannerApp({super.key, required this.showOnboarding});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'PDF SCANNER & VIEWER',
+      title: 'PDF SCANNER & EDITOR',
       debugShowCheckedModeBanner: false,
+      initialRoute: showOnboarding ? '/onboarding' : '/home',
+      routes: {
+        '/onboarding': (context) => const OnboardingScreen(),
+        '/home': (context) => const HomeScreen(),
+      },
       themeMode: ThemeMode.system,
       theme: ThemeData(
+        useMaterial3: true,
         colorScheme: ColorScheme.fromSeed(
           seedColor: Colors.indigo,
+          primary: Colors.indigo,
+          secondary: Colors.indigoAccent,
           brightness: Brightness.light,
         ),
-        useMaterial3: true,
+        pageTransitionsTheme: const PageTransitionsTheme(
+          builders: {
+            TargetPlatform.android: ZoomPageTransitionsBuilder(
+              allowEnterRouteSnapshotting: false,
+            ),
+            TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+          },
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            splashFactory: InkRipple.splashFactory,
+            animationDuration: const Duration(milliseconds: 150),
+          ),
+        ),
+        textButtonTheme: TextButtonThemeData(
+          style: TextButton.styleFrom(
+            splashFactory: InkRipple.splashFactory,
+            animationDuration: const Duration(milliseconds: 150),
+          ),
+        ),
+        visualDensity: VisualDensity.adaptivePlatformDensity,
         fontFamily: 'Roboto',
         appBarTheme: const AppBarTheme(
           centerTitle: true,
@@ -72,7 +105,7 @@ class PDFScannerApp extends StatelessWidget {
         GlobalCupertinoLocalizations.delegate,
       ],
       supportedLocales: const [Locale('en', 'US')],
-      home: const HomeScreen(),
+      home: showOnboarding ? const OnboardingScreen() : const HomeScreen(),
     );
   }
 }

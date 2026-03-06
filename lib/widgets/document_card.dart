@@ -9,7 +9,8 @@ class DocumentCard extends StatelessWidget {
   final VoidCallback onDelete;
   final VoidCallback onShare;
   final VoidCallback onRename;
-  final VoidCallback? onEditAsText;
+  final VoidCallback? onExtractText;
+  final VoidCallback? onEditPdf;
 
   const DocumentCard({
     super.key,
@@ -18,7 +19,8 @@ class DocumentCard extends StatelessWidget {
     required this.onDelete,
     required this.onShare,
     required this.onRename,
-    this.onEditAsText,
+    this.onExtractText,
+    this.onEditPdf,
   });
 
   @override
@@ -64,23 +66,14 @@ class DocumentCard extends StatelessWidget {
         trailing: PopupMenuButton<String>(
           onSelected: (value) {
             if (value == 'share') onShare();
-            if (value == 'editText' && onEditAsText != null) onEditAsText!();
+            if (value == 'extract' && onExtractText != null) onExtractText!();
+            if (value == 'editPdf' && onEditPdf != null) onEditPdf!();
             if (value == 'rename') onRename();
             if (value == 'delete') onDelete();
           },
           itemBuilder: (context) => [
             const PopupMenuItem(
-              value: 'share',
-              child: Row(
-                children: [
-                  Icon(Icons.share, size: 20),
-                  SizedBox(width: 8),
-                  Text('Share'),
-                ],
-              ),
-            ),
-            const PopupMenuItem(
-              value: 'editText',
+              value: 'extract',
               child: Row(
                 children: [
                   Icon(
@@ -89,13 +82,18 @@ class DocumentCard extends StatelessWidget {
                     color: Colors.indigo,
                   ),
                   SizedBox(width: 8),
-                  Text(
-                    'Edit as Text',
-                    style: TextStyle(
-                      color: Colors.indigo,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+                  Text('Extract & Refine'),
+                ],
+              ),
+            ),
+            const PopupMenuDivider(),
+            const PopupMenuItem(
+              value: 'share',
+              child: Row(
+                children: [
+                  Icon(Icons.share, size: 20),
+                  SizedBox(width: 8),
+                  Text('Share'),
                 ],
               ),
             ),

@@ -85,18 +85,18 @@ class StyledTextController extends TextEditingController {
 
     text.splitMapJoin(
       RegExp(
-        r'(\*\*\*[\s\S]*?\*\*\*)|' // Bold+Italic
+        r'(\*\*\*[\s\S]*?\*\*\*)|' // Bold+Italic (Triple)
         r'(\[(?:H1|h1)\][\s\S]*?\[/(?:H1|h1)\]|^\s*#\s+.*?$)|' // H1
         r'(\[(?:H2|h2)\][\s\S]*?\[/(?:H2|h2)\]|^\s*##\s+.*?$)|' // H2
         r'(\[(?:H3|h3)\][\s\S]*?\[/(?:H3|h3)\]|^\s*###\s+.*?$)|' // H3
         r'(\*\*[\s\S]*?\*\*)|' // Bold
-        r'(\*[\s\S]*?\*)|' // Italic
         r'(__[\s\S]*?__)|' // Underline
+        r'(\*[\s\S]*?\*)|' // Italic
         r'(~~[\s\S]*?~~)|' // Strike
         r'(^- .*?$|^- .*?\n)|' // Bullet
         r'(^\d+\. .*?$|^\d+\. .*?\n)|' // Numbered
         r'(^---+$|^---+\n)|' // HR
-        r'(\[/?(?:H1|h1|H2|h2|H3|h3)\]|\*\*\*|\*\*|\*|__|~~|---+|#+|\[:[\s\S]*?:\])', // Catch-all for stray markers
+        r'(\[/?(?:H1|h1|H2|h2|H3|h3)\]|\*\*\*|\*\*|\*|__|~~|---+|#+|\[:[\s\S]*?:\])', // Markers
         multiLine: true,
       ),
       onMatch: (m) {
@@ -208,35 +208,41 @@ class StyledTextController extends TextEditingController {
           children.add(
             _buildSpanRecursive(
               content,
-              style?.copyWith(fontWeight: FontWeight.bold, color: Colors.black),
+              (style ?? const TextStyle()).copyWith(
+                fontWeight: FontWeight.bold,
+                color: Colors.black,
+              ),
             ),
           );
           children.add(TextSpan(text: '**', style: markerStyle));
         } else if (m.group(6) != null) {
-          // * Italic *
-          final content = match.substring(1, match.length - 1);
-          children.add(TextSpan(text: '*', style: markerStyle));
-          children.add(
-            _buildSpanRecursive(
-              content,
-              style?.copyWith(fontStyle: FontStyle.italic, color: Colors.black),
-            ),
-          );
-          children.add(TextSpan(text: '*', style: markerStyle));
-        } else if (m.group(7) != null) {
           // __ Underline __
           final content = match.substring(2, match.length - 2);
           children.add(TextSpan(text: '__', style: markerStyle));
           children.add(
             _buildSpanRecursive(
               content,
-              style?.copyWith(
+              (style ?? const TextStyle()).copyWith(
                 decoration: TextDecoration.underline,
                 color: Colors.black,
               ),
             ),
           );
           children.add(TextSpan(text: '__', style: markerStyle));
+        } else if (m.group(7) != null) {
+          // * Italic *
+          final content = match.substring(1, match.length - 1);
+          children.add(TextSpan(text: '*', style: markerStyle));
+          children.add(
+            _buildSpanRecursive(
+              content,
+              (style ?? const TextStyle()).copyWith(
+                fontStyle: FontStyle.italic,
+                color: Colors.black,
+              ),
+            ),
+          );
+          children.add(TextSpan(text: '*', style: markerStyle));
         } else if (m.group(8) != null) {
           // ~~ Strike ~~
           final content = match.substring(2, match.length - 2);
@@ -393,43 +399,197 @@ class StyledTextController extends TextEditingController {
   }
 
   void toggleH1() {
-    _wrapSelection('[H1]', '[/H1]');
+    _toggleLineStart(
+      '# ',
+      replaceOthers: [
+        '## ',
+        '### ',
+        '- ',
+        '1. ',
+        '[:left:]',
+        '[:center:]',
+        '[:right:]',
+      ],
+    );
   }
 
   void toggleH2() {
-    _wrapSelection('[H2]', '[/H2]');
+    _toggleLineStart(
+      '## ',
+      replaceOthers: [
+        '# ',
+        '### ',
+        '- ',
+        '1. ',
+        '[:left:]',
+        '[:center:]',
+        '[:right:]',
+      ],
+    );
   }
 
   void toggleH3() {
-    _wrapSelection('[H3]', '[/H3]');
+    _toggleLineStart(
+      '### ',
+      replaceOthers: [
+        '# ',
+        '## ',
+        '- ',
+        '1. ',
+        '[:left:]',
+        '[:center:]',
+        '[:right:]',
+      ],
+    );
   }
 
   void _wrapSelection(String prefix, String suffix) {
-    final curSelection = selection.isValid
-        ? selection
-        : TextSelection.collapsed(offset: text.length);
+    if (!selection.isValid) return;
+
+    final curSelection = selection;
     final curText = text;
 
-    if (curSelection.isCollapsed) {
-      // Check if we are already inside wrapping
-      final start = curSelection.start;
-      if (start >= prefix.length &&
-          start + suffix.length <= curText.length &&
-          curText.substring(start - prefix.length, start) == prefix &&
-          curText.substring(start, start + suffix.length) == suffix) {
-        // Remove existing empty wrapping
+    // 1. Check if the selection is already wrapped from OUTSIDE
+    if (curSelection.start >= prefix.length &&
+        curSelection.end <= curText.length - suffix.length) {
+      final textBefore = curText.substring(
+        curSelection.start - prefix.length,
+        curSelection.start,
+      );
+      final textAfter = curText.substring(
+        curSelection.end,
+        curSelection.end + suffix.length,
+      );
+      if (textBefore == prefix && textAfter == suffix) {
         final newText = curText.replaceRange(
-          start - prefix.length,
-          start + suffix.length,
+          curSelection.end,
+          curSelection.end + suffix.length,
+          '',
+        );
+        final finalText = newText.replaceRange(
+          curSelection.start - prefix.length,
+          curSelection.start,
           '',
         );
         value = TextEditingValue(
-          text: newText,
-          selection: TextSelection.collapsed(offset: start - prefix.length),
+          text: finalText,
+          selection: TextSelection(
+            baseOffset: curSelection.start - prefix.length,
+            extentOffset: curSelection.end - prefix.length,
+          ),
         );
         return;
       }
+    }
 
+    // 2. NEW Smart Check: Is the selection INSIDE a larger block of the same type?
+    // Find the nearest surrounding prefix/suffix
+    int searchStart = curSelection.start;
+    int searchEnd = curSelection.end;
+
+    // Look backwards for prefix
+    int prefixPos = -1;
+    for (int i = searchStart - prefix.length; i >= 0; i--) {
+      if (curText.substring(i, i + prefix.length) == prefix) {
+        prefixPos = i;
+        break;
+      }
+      if (curText[i] == '\n') {
+        break; // Don't search across lines for simple styles
+      }
+    }
+
+    // Look forwards for suffix
+    int suffixPos = -1;
+    if (prefixPos != -1) {
+      for (int i = searchEnd; i <= curText.length - suffix.length; i++) {
+        if (curText.substring(i, i + suffix.length) == suffix) {
+          suffixPos = i;
+          break;
+        }
+        if (curText[i] == '\n') break;
+      }
+    }
+
+    if (prefixPos != -1 && suffixPos != -1) {
+      // Toggle OFF by splitting or simply removing if it's the whole line
+      // For simplicity in this UI, we just remove the outer ones if they exist
+      final newText = curText.replaceRange(
+        suffixPos,
+        suffixPos + suffix.length,
+        '',
+      );
+      final finalText = newText.replaceRange(
+        prefixPos,
+        prefixPos + prefix.length,
+        '',
+      );
+
+      value = TextEditingValue(
+        text: finalText,
+        selection: TextSelection(
+          baseOffset: curSelection.start - prefix.length,
+          extentOffset: curSelection.end - prefix.length,
+        ),
+      );
+      return;
+    }
+
+    // 3. Check if the selection is already wrapped from INSIDE
+    final selectedText = curSelection.textInside(curText);
+    if (selectedText.startsWith(prefix) &&
+        selectedText.endsWith(suffix) &&
+        selectedText.length >= (prefix.length + suffix.length)) {
+      final unwrapped = selectedText.substring(
+        prefix.length,
+        selectedText.length - suffix.length,
+      );
+      final newText = curText.replaceRange(
+        curSelection.start,
+        curSelection.end,
+        unwrapped,
+      );
+      value = TextEditingValue(
+        text: newText,
+        selection: TextSelection(
+          baseOffset: curSelection.start,
+          extentOffset: curSelection.start + unwrapped.length,
+        ),
+      );
+      return;
+    }
+
+    // 4. Apply Multi-paragraph wrapping logic
+    if (!curSelection.isCollapsed && selectedText.contains('\n')) {
+      final lines = selectedText.split('\n');
+      final wrappedLines = lines
+          .map((line) {
+            final trimmed = line.trim();
+            if (trimmed.isEmpty) return line;
+            if (trimmed.startsWith(prefix) && trimmed.endsWith(suffix)) {
+              return line;
+            }
+            return '$prefix$line$suffix';
+          })
+          .join('\n');
+
+      final newText = curText.replaceRange(
+        curSelection.start,
+        curSelection.end,
+        wrappedLines,
+      );
+      value = TextEditingValue(
+        text: newText,
+        selection: TextSelection(
+          baseOffset: curSelection.start,
+          extentOffset: curSelection.start + wrappedLines.length,
+        ),
+      );
+      return;
+    }
+
+    // 5. Default single-wrapping (includes empty selection)
+    if (curSelection.isCollapsed) {
       final newText = curText.replaceRange(
         curSelection.start,
         curSelection.end,
@@ -441,43 +601,21 @@ class StyledTextController extends TextEditingController {
           offset: curSelection.start + prefix.length,
         ),
       );
-      return;
-    }
-
-    final selectedText = curSelection.textInside(curText);
-    String newText;
-    TextSelection newSelection;
-
-    if (selectedText.length >= prefix.length + suffix.length &&
-        selectedText.startsWith(prefix) &&
-        selectedText.endsWith(suffix)) {
-      final unwrapped = selectedText.substring(
-        prefix.length,
-        selectedText.length - suffix.length,
-      );
-      newText = curText.replaceRange(
-        curSelection.start,
-        curSelection.end,
-        unwrapped,
-      );
-      newSelection = TextSelection(
-        baseOffset: curSelection.start,
-        extentOffset: curSelection.start + unwrapped.length,
-      );
     } else {
       final wrapped = '$prefix$selectedText$suffix';
-      newText = curText.replaceRange(
+      final newText = curText.replaceRange(
         curSelection.start,
         curSelection.end,
         wrapped,
       );
-      newSelection = TextSelection(
-        baseOffset: curSelection.start,
-        extentOffset: curSelection.start + wrapped.length,
+      value = TextEditingValue(
+        text: newText,
+        selection: TextSelection(
+          baseOffset: curSelection.start,
+          extentOffset: curSelection.start + wrapped.length,
+        ),
       );
     }
-
-    value = TextEditingValue(text: newText, selection: newSelection);
   }
 
   void _toggleLineStart(String marker, {List<String>? replaceOthers}) {

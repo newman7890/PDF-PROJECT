@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../services/storage_service.dart';
 import 'privacy_policy_screen.dart';
+import 'onboarding_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -65,6 +66,28 @@ class SettingsScreen extends StatelessWidget {
               title: const Text('Rate App'),
               subtitle: const Text('Support our development'),
               onTap: () => _rateApp(context),
+            ),
+            const Divider(indent: 56),
+            ListTile(
+              leading: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.indigo.withAlpha(30),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.help_outline, color: Colors.indigo),
+              ),
+              title: const Text('User Guide'),
+              subtitle: const Text('Learn how to use all features'),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) =>
+                        const OnboardingScreen(isFromSettings: true),
+                  ),
+                );
+              },
             ),
           ]),
           const SizedBox(height: 16),
@@ -131,6 +154,38 @@ class SettingsScreen extends StatelessWidget {
               onTap: () => _showClearCacheDialog(context),
             ),
           ]),
+          const SizedBox(height: 48),
+          Center(
+            child: Column(
+              children: [
+                Image.asset(
+                  'assets/images/app_logo.png',
+                  height: 64,
+                  errorBuilder: (context, error, stackTrace) => Icon(
+                    Icons.description_rounded,
+                    size: 64,
+                    color: theme.colorScheme.primary.withAlpha(50),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'PDF Scanner & Editor',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+                Text('Version 1.0.0', style: theme.textTheme.bodySmall),
+                const SizedBox(height: 8),
+                Text(
+                  '© 2024 Newman Apps',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: Colors.grey,
+                  ),
+                ),
+              ],
+            ),
+          ),
           const SizedBox(height: 40),
         ],
       ),

@@ -42,10 +42,11 @@ class PdfEditorService extends ChangeNotifier {
     if (_selectedItemId == null) return null;
     final items = _edits[_currentPageIndex];
     if (items == null) return null;
-    return items.firstWhere(
-      (item) => item.id == _selectedItemId,
-      orElse: () => items[0], // Dummy fallback, will check index instead
-    );
+    try {
+      return items.firstWhere((item) => item.id == _selectedItemId);
+    } catch (_) {
+      return null;
+    }
   }
 
   void setCurrentPage(int index) {
@@ -191,6 +192,8 @@ class PdfEditorService extends ChangeNotifier {
   void addTextEdit(
     Offset localPosition, {
     String initialText = "Double tap to edit",
+    bool? isH1,
+    bool? isH2,
   }) {
     final newItem = TextEditItem(
       id: _uuid.v4(),
@@ -203,8 +206,8 @@ class PdfEditorService extends ChangeNotifier {
       isItalic: _isItalic,
       isUnderline: _isUnderline,
       isStrikethrough: _isStrikethrough,
-      isH1: _isH1,
-      isH2: _isH2,
+      isH1: isH1 ?? _isH1,
+      isH2: isH2 ?? _isH2,
       textAlign: _textAlign,
     );
     _addItem(newItem);
@@ -273,6 +276,13 @@ class PdfEditorService extends ChangeNotifier {
 
   void clearAll() {
     _edits.clear();
+    _selectedItemId = null;
+    notifyListeners();
+  }
+
+  void loadEdits(Map<int, List<PdfEditItem>> existingEdits) {
+    _edits.clear();
+    _edits.addAll(existingEdits);
     _selectedItemId = null;
     notifyListeners();
   }

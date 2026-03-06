@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:pdfx/pdfx.dart' as dynamic_pdfx;
 import '../models/scanned_document.dart';
 import '../services/pdf_service.dart';
 import '../services/storage_service.dart';
@@ -9,8 +11,6 @@ import '../services/ocr_service.dart';
 import '../services/rich_text_service.dart';
 import 'signature_pad_screen.dart';
 
-/// A screen that extracts the text from a PDF and lets the user edit it,
-/// then saves the result as a new PDF.
 class TextEditorScreen extends StatefulWidget {
   final ScannedDocument document;
 
@@ -20,16 +20,35 @@ class TextEditorScreen extends StatefulWidget {
   State<TextEditorScreen> createState() => _TextEditorScreenState();
 }
 
-class _TextEditorScreenState extends State<TextEditorScreen> {
+class _TextEditorScreenState extends State<TextEditorScreen>
+    with SingleTickerProviderStateMixin {
   final StyledTextController _controller = StyledTextController();
+  dynamic_pdfx.PdfController? _pdfController;
   bool _isLoading = true;
   bool _isSaving = false;
-  String _statusMessage = 'Extracting text from PDF...';
-  List<Offset>? _signaturePoints; // Captured signature points
+  bool _showReference = false;
+  String _statusMessage = 'Analyzing Document...';
+  List<Offset>? _signaturePoints;
+
+  late AnimationController _overlayController;
+  late Animation<double> _overlayAnimation;
 
   @override
   void initState() {
     super.initState();
+    _pdfController = dynamic_pdfx.PdfController(
+      document: dynamic_pdfx.PdfDocument.openFile(widget.document.filePath),
+    );
+
+    _overlayController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
+    _overlayAnimation = CurvedAnimation(
+      parent: _overlayController,
+      curve: Curves.easeInOutCubic,
+    );
+
     _extractText();
   }
 
@@ -40,34 +59,34 @@ class _TextEditorScreenState extends State<TextEditorScreen> {
     try {
       setState(() {
         _isLoading = true;
-        _statusMessage = 'Extracting text from PDF...';
+        _statusMessage = 'Enhancing & Extracting...';
       });
 
-      final text = await pdfService.extractTextFromPdf(
-        widget.document.filePath,
-        ocrService: ocrService,
-      );
+      String text;
+      if (widget.document.extractedText != null &&
+          widget.document.extractedText!.isNotEmpty) {
+        text = widget.document.extractedText!;
+        setState(() => _statusMessage = 'Loading saved text...');
+      } else {
+        text = await pdfService.extractTextFromPdf(
+          widget.document.sourcePath ?? widget.document.filePath,
+          ocrService: ocrService,
+        );
+      }
 
       if (!mounted) return;
 
-      if (text.trim().isEmpty) {
-        setState(() {
-          _isLoading = false;
-          _controller.text =
-              '(No text could be extracted. This may be a scanned image-only PDF. '
-              'You can still type your content below and save as a new PDF.)';
-        });
-      } else {
-        setState(() {
-          _isLoading = false;
-          _controller.text = text;
-        });
-      }
+      setState(() {
+        _isLoading = false;
+        _controller.text = text.trim().isEmpty
+            ? '(No text detected. Enter your content here.)'
+            : text;
+      });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _isLoading = false;
-        _controller.text = '(Error extracting text: $e)';
+        _controller.text = '(Error during extraction: $e)';
       });
     }
   }
@@ -77,53 +96,106 @@ class _TextEditorScreenState extends State<TextEditorScreen> {
 
     final pdfService = context.read<PDFService>();
     final storageService = context.read<StorageService>();
-    final scaffoldMessenger = ScaffoldMessenger.of(context);
-    final navigator = Navigator.of(context);
 
     setState(() {
       _isSaving = true;
-      _statusMessage = 'Saving as new PDF...';
+      _statusMessage = 'Finalizing Document...';
     });
 
     try {
-      final baseName = widget.document.title
-          .replaceAll('.pdf', '')
-          .replaceAll('.PDF', '');
-      final newPath = await storageService.getNewFilePath('Edited_$baseName');
+      final String currentTitle = widget.document.title;
+      final bool alreadyCleaned = currentTitle.startsWith('Cleaned_');
+
+      final String newTitle = alreadyCleaned
+          ? currentTitle
+          : 'Cleaned_$currentTitle';
+      final String sourcePath =
+          widget.document.sourcePath ?? widget.document.filePath;
+
+      final newPath = alreadyCleaned
+          ? widget.document.filePath
+          : await storageService.getNewFilePath(
+              newTitle.replaceAll('.pdf', ''),
+            );
 
       await pdfService.saveTextAsPdf(
         _controller.text,
         newPath,
-        title: 'Edited_$baseName',
+        title: newTitle.replaceAll('.pdf', ''),
         signaturePoints: _signaturePoints,
       );
 
-      final newDoc = ScannedDocument(
-        id: DateTime.now().toIso8601String(),
-        title: 'Edited_$baseName.pdf',
-        filePath: newPath,
-        dateCreated: DateTime.now(),
-        isPdf: true,
-      );
-
-      await storageService.saveDocument(newDoc);
-
-      if (!mounted) return;
-      scaffoldMessenger.showSnackBar(
-        const SnackBar(
-          content: Text('✅ Saved! New edited PDF is now in your library.'),
-          backgroundColor: Colors.green,
+      await storageService.saveDocument(
+        widget.document.copyWith(
+          title: newTitle,
+          filePath: newPath,
+          sourcePath: sourcePath,
+          extractedText: _controller.text,
         ),
       );
-      navigator.pop();
+
+      if (!mounted) return;
+      Navigator.pop(context);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('✨ Document Refined & Saved Successfully!'),
+          backgroundColor: Colors.indigo[800],
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
       setState(() => _isSaving = false);
-      scaffoldMessenger.showSnackBar(
-        SnackBar(
-          content: Text('Failed to save: $e'),
-          backgroundColor: Colors.red,
-        ),
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Save failed: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  void _toggleReference() {
+    setState(() {
+      _showReference = !_showReference;
+      if (_showReference) {
+        _overlayController.forward();
+      } else {
+        _overlayController.reverse();
+      }
+    });
+  }
+
+  void _fixOrdinals() {
+    final text = _controller.text;
+    final newText = text.replaceAllMapped(RegExp(r'\b(\d+)%'), (match) {
+      final numStr = match.group(1)!;
+      final num = int.parse(numStr);
+      String suffix = 'th';
+      if (num % 100 >= 11 && num % 100 <= 13) {
+        suffix = 'th';
+      } else {
+        switch (num % 10) {
+          case 1:
+            suffix = 'st';
+            break;
+          case 2:
+            suffix = 'nd';
+            break;
+          case 3:
+            suffix = 'rd';
+            break;
+        }
+      }
+      return '$numStr$suffix';
+    });
+
+    if (newText != text) {
+      _controller.text = newText;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Fixed ordinals (e.g., 1st, 2nd)!')),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No misplaced percentages found.')),
       );
     }
   }
@@ -131,278 +203,385 @@ class _TextEditorScreenState extends State<TextEditorScreen> {
   @override
   void dispose() {
     _controller.dispose();
+    _pdfController?.dispose();
+    _overlayController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[50],
-      appBar: AppBar(
-        title: Text(widget.document.title, overflow: TextOverflow.ellipsis),
-        backgroundColor: Colors.indigo,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.share_outlined),
-            tooltip: 'Share as PDF',
-            onPressed: () {
-              // Share functionality
-              Share.shareXFiles([XFile(widget.document.filePath)]);
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.download_for_offline_outlined),
-            tooltip: 'Download',
-            onPressed: _saveAsPdf, // In this context, save is like download
-          ),
-          if (!_isLoading)
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              tooltip: 'Re-extract text',
-              onPressed: _extractText,
-            ),
+      backgroundColor: const Color(0xFFFBFBFE),
+      appBar: _buildAppBar(),
+      body: Stack(
+        children: [
+          _isLoading ? _buildLoadingUI() : _buildEditorUI(),
+          if (!_isLoading) _buildReferenceOverlay(),
         ],
       ),
-      body: _isLoading
-          ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  TweenAnimationBuilder<double>(
-                    tween: Tween(begin: 0.0, end: 1.0),
-                    duration: const Duration(seconds: 2),
-                    builder: (context, value, _) =>
-                        CircularProgressIndicator(value: value),
+      floatingActionButton: _isLoading ? null : _buildReferenceFAB(),
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar() {
+    return AppBar(
+      title: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            widget.document.title,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.normal),
+          ),
+          Text(
+            'Text Extraction & Refinement',
+            style: TextStyle(
+              fontSize: 10,
+              color: Colors.black.withValues(alpha: 0.7),
+            ),
+          ),
+        ],
+      ),
+      backgroundColor: Colors.white,
+      foregroundColor: Colors.black87,
+      elevation: 0,
+      centerTitle: false,
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.share_outlined, size: 20),
+          onPressed: () => Share.shareXFiles([XFile(widget.document.filePath)]),
+        ),
+        if (!_isLoading)
+          TextButton.icon(
+            onPressed: _isSaving ? null : _saveAsPdf,
+            icon: _isSaving
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.auto_fix_high, size: 18),
+            label: const Text(
+              'REFINE',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            style: TextButton.styleFrom(foregroundColor: Colors.indigo[700]),
+          ),
+        const SizedBox(width: 8),
+      ],
+    );
+  }
+
+  Widget _buildLoadingUI() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(32),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.indigo.withValues(alpha: 0.1),
+                  blurRadius: 40,
+                  spreadRadius: 10,
+                ),
+              ],
+            ),
+            child: const CircularProgressIndicator(
+              strokeWidth: 3,
+              color: Colors.indigo,
+            ),
+          ),
+          const SizedBox(height: 32),
+          Text(
+            _statusMessage,
+            style: TextStyle(
+              color: Colors.indigo[900],
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'Processing vectors and AI refinement...',
+            style: TextStyle(color: Colors.grey, fontSize: 12),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEditorUI() {
+    return Column(
+      children: [
+        _buildModernToolbar(),
+        const Divider(height: 1, color: Color(0xFFEEEEEE)),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            child: TextField(
+              controller: _controller,
+              maxLines: null,
+              expands: true,
+              textAlignVertical: TextAlignVertical.top,
+              style: const TextStyle(
+                fontSize: 17,
+                height: 1.7,
+                fontFamily: 'Inter',
+                color: Color(0xFF2D3436),
+                letterSpacing: 0.2,
+              ),
+              decoration: const InputDecoration(
+                border: InputBorder.none,
+                hintText: 'Start writing your document...',
+                hintStyle: TextStyle(color: Color(0xFFBDC3C7)),
+              ),
+            ),
+          ),
+        ),
+        _buildWordCountBar(),
+      ],
+    );
+  }
+
+  Widget _buildModernToolbar() {
+    return Container(
+      height: 50,
+      color: Colors.white,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Row(
+          children: [
+            _toolIcon(Icons.undo_rounded, _controller.undo, 'Undo'),
+            _toolIcon(Icons.redo_rounded, _controller.redo, 'Redo'),
+            _vDiv(),
+            _toolIcon(
+              Icons.format_bold_rounded,
+              _controller.toggleBold,
+              'Bold',
+            ),
+            _toolIcon(
+              Icons.format_italic_rounded,
+              _controller.toggleItalic,
+              'Italic',
+            ),
+            _toolIcon(
+              Icons.format_underlined_rounded,
+              _controller.toggleUnderline,
+              'Underline',
+            ),
+            _vDiv(),
+            _toolIcon(
+              Icons.format_list_bulleted_rounded,
+              _controller.toggleBulletList,
+              'List',
+            ),
+            _vDiv(),
+            _toolText('H1', _controller.toggleH1),
+            _toolText('H2', _controller.toggleH2),
+            _vDiv(),
+            _toolText('Fix %', _fixOrdinals),
+            _vDiv(),
+            _toolIcon(Icons.draw_rounded, _openSignature, 'Sign'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _toolIcon(IconData icon, VoidCallback onPressed, String tooltip) {
+    return IconButton(
+      icon: Icon(icon, size: 20, color: const Color(0xFF636E72)),
+      onPressed: onPressed,
+      tooltip: tooltip,
+      splashRadius: 20,
+      visualDensity: VisualDensity.compact,
+    );
+  }
+
+  Widget _toolText(String label, VoidCallback onPressed) {
+    return TextButton(
+      onPressed: onPressed,
+      style: TextButton.styleFrom(
+        minimumSize: const Size(40, 40),
+        padding: EdgeInsets.zero,
+        foregroundColor: const Color(0xFF636E72),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+      ),
+    );
+  }
+
+  Widget _vDiv() => const VerticalDivider(
+    width: 24,
+    indent: 15,
+    endIndent: 15,
+    color: Color(0xFFE0E0E0),
+  );
+
+  Widget _buildWordCountBar() {
+    return Container(
+      padding: EdgeInsets.fromLTRB(
+        24,
+        8,
+        24,
+        8 + MediaQuery.of(context).padding.bottom,
+      ),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: Color(0xFFF1F1F1))),
+      ),
+      child: Row(
+        children: [
+          Text(
+            '${_controller.text.split(RegExp(r'\s+')).where((s) => s.isNotEmpty).length} words  •  ${_controller.text.length} chars',
+            style: TextStyle(
+              fontSize: 11,
+              color: Colors.indigo[300],
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const Spacer(),
+          const Icon(Icons.cloud_done_rounded, size: 14, color: Colors.green),
+          const SizedBox(width: 4),
+          Text(
+            'Local Save Active',
+            style: TextStyle(fontSize: 10, color: Colors.grey[400]),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReferenceFAB() {
+    return FloatingActionButton.extended(
+      onPressed: _toggleReference,
+      backgroundColor: _showReference ? Colors.red[400] : Colors.indigo[900],
+      elevation: 4,
+      icon: Icon(_showReference ? Icons.close : Icons.description_outlined),
+      label: Text(_showReference ? 'Close View' : 'Original PDF'),
+    );
+  }
+
+  Widget _buildReferenceOverlay() {
+    return AnimatedBuilder(
+      animation: _overlayAnimation,
+      builder: (context, child) {
+        if (_overlayAnimation.value == 0) return const SizedBox.shrink();
+
+        return FadeTransition(
+          opacity: _overlayAnimation,
+          child: Stack(
+            children: [
+              // Blur background
+              GestureDetector(
+                onTap: _toggleReference,
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(
+                    sigmaX: 5 * _overlayAnimation.value,
+                    sigmaY: 5 * _overlayAnimation.value,
                   ),
-                  const SizedBox(height: 16),
-                  Text(
-                    _statusMessage,
-                    style: TextStyle(
-                      color: Colors.grey[600],
-                      fontWeight: FontWeight.w500,
+                  child: Container(
+                    color: Colors.black.withValues(
+                      alpha: 0.1 * _overlayAnimation.value,
                     ),
                   ),
-                ],
+                ),
               ),
-            )
-          : Column(
-              children: [
-                // Text editor container
-                Expanded(
+
+              // Floating Reference Card
+              Center(
+                child: ScaleTransition(
+                  scale: _overlayAnimation,
                   child: Container(
-                    margin: const EdgeInsets.all(12),
+                    width: MediaQuery.of(context).size.width * 0.85,
+                    height: MediaQuery.of(context).size.height * 0.65,
                     decoration: BoxDecoration(
                       color: Colors.white,
-                      borderRadius: BorderRadius.circular(15),
+                      borderRadius: BorderRadius.circular(24),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.03),
-                          blurRadius: 10,
-                          spreadRadius: 2,
+                          color: Colors.indigo.withValues(alpha: 0.1),
+                          blurRadius: 40,
+                          spreadRadius: 10,
+                        ),
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.2),
+                          blurRadius: 30,
+                          offset: const Offset(0, 10),
                         ),
                       ],
                     ),
                     clipBehavior: Clip.antiAlias,
                     child: Column(
                       children: [
-                        _buildFormattingToolbar(),
-                        const Divider(height: 1),
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          color: const Color(0xFFF8F9FA),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.picture_as_pdf,
+                                color: Colors.red,
+                                size: 18,
+                              ),
+                              const SizedBox(width: 8),
+                              const Text(
+                                'Original Reference',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                ),
+                              ),
+                              const Spacer(),
+                              Text(
+                                'Use for visual verification',
+                                style: TextStyle(
+                                  color: Colors.grey[600],
+                                  fontSize: 10,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                         Expanded(
-                          child: TextField(
-                            controller: _controller,
-                            maxLines: null,
-                            expands: true,
-                            textAlignVertical: TextAlignVertical.top,
-                            style: const TextStyle(
-                              fontSize: 16,
-                              height: 1.6,
-                              fontFamily: 'Roboto',
-                              color: Colors.black87,
-                            ),
-                            decoration: InputDecoration(
-                              border: InputBorder.none,
-                              hintText:
-                                  'Start typing or editing your document...',
-                              hintStyle: TextStyle(color: Colors.grey[400]),
-                              contentPadding: const EdgeInsets.all(20),
-                              fillColor: Colors.white,
-                              filled: true,
-                            ),
+                          child: dynamic_pdfx.PdfView(
+                            controller: _pdfController!,
+                            scrollDirection: Axis.vertical,
                           ),
                         ),
                       ],
                     ),
                   ),
                 ),
-
-                // Bottom UI
-                SafeArea(
-                  top: false,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          '${_controller.text.length} characters',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.grey[500],
-                          ),
-                        ),
-                        ElevatedButton.icon(
-                          onPressed: _isSaving ? null : _saveAsPdf,
-                          icon: _isSaving
-                              ? const SizedBox(
-                                  width: 14,
-                                  height: 14,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Icon(Icons.check_circle_outline),
-                          label: Text(_isSaving ? 'Saving...' : 'SAVE CHANGES'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.indigo,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
-  Widget _buildFormattingToolbar() {
-    return Container(
-      color: Colors.grey[100],
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            _ToolbarButton(
-              icon: Icons.undo,
-              onPressed: _controller.undo,
-              tooltip: 'Undo',
-            ),
-            _ToolbarButton(
-              icon: Icons.redo,
-              onPressed: _controller.redo,
-              tooltip: 'Redo',
-            ),
-            const VerticalDivider(width: 16),
-            _ToolbarButton(
-              icon: Icons.format_bold,
-              onPressed: _controller.toggleBold,
-              tooltip: 'Bold',
-            ),
-            _ToolbarButton(
-              icon: Icons.format_italic,
-              onPressed: _controller.toggleItalic,
-              tooltip: 'Italic',
-            ),
-            _ToolbarButton(
-              icon: Icons.format_underlined,
-              onPressed: _controller.toggleUnderline,
-              tooltip: 'Underline',
-            ),
-            _ToolbarButton(
-              icon: Icons.format_strikethrough,
-              onPressed: _controller.toggleStrikethrough,
-              tooltip: 'Strikethrough',
-            ),
-            const VerticalDivider(width: 16),
-            _ToolbarButton(
-              icon: Icons.format_list_bulleted,
-              onPressed: _controller.toggleBulletList,
-              tooltip: 'Bullet List',
-            ),
-            _ToolbarButton(
-              icon: Icons.format_list_numbered,
-              onPressed: _controller.toggleNumberedList,
-              tooltip: 'Numbered List',
-            ),
-            _ToolbarButton(
-              icon: Icons.horizontal_rule,
-              onPressed: _controller.insertHorizontalRule,
-              tooltip: 'Horizontal Rule',
-            ),
-
-            const VerticalDivider(width: 16),
-            _ToolbarButton(
-              text: 'H1',
-              onPressed: _controller.toggleH1,
-              tooltip: 'Heading 1',
-            ),
-            _ToolbarButton(
-              text: 'H2',
-              onPressed: _controller.toggleH2,
-              tooltip: 'Heading 2',
-            ),
-            const VerticalDivider(width: 16),
-            _ToolbarButton(
-              icon: Icons.gesture,
-              onPressed: () async {
-                final points = await Navigator.push<List<Offset>>(
-                  context,
-                  MaterialPageRoute(builder: (c) => const SignaturePadScreen()),
-                );
-                if (points != null && points.isNotEmpty && mounted) {
-                  setState(() => _signaturePoints = points);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text(
-                        '✅ Signature captured! Tap "SAVE CHANGES" to embed it in the PDF.',
-                      ),
-                      backgroundColor: Colors.green,
-                    ),
-                  );
-                }
-              },
-              tooltip: 'Add Signature',
-            ),
-          ],
+  Future<void> _openSignature() async {
+    final points = await Navigator.push<List<Offset>>(
+      context,
+      MaterialPageRoute(builder: (c) => const SignaturePadScreen()),
+    );
+    if (points != null && points.isNotEmpty && mounted) {
+      setState(() => _signaturePoints = points);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ Signature captured and ready for export.'),
+          backgroundColor: Colors.green,
+          behavior: SnackBarBehavior.floating,
         ),
-      ),
-    );
-  }
-}
-
-class _ToolbarButton extends StatelessWidget {
-  final IconData? icon;
-  final String? text;
-  final VoidCallback onPressed;
-  final String tooltip;
-
-  const _ToolbarButton({
-    this.icon,
-    this.text,
-    required this.onPressed,
-    required this.tooltip,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return IconButton(
-      icon: icon != null
-          ? Icon(icon, size: 20)
-          : Text(
-              text!,
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-            ),
-      onPressed: onPressed,
-      tooltip: tooltip,
-      visualDensity: VisualDensity.compact,
-      color: Colors.indigo,
-    );
+      );
+    }
   }
 }

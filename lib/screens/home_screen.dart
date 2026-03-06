@@ -13,7 +13,9 @@ import '../widgets/document_card.dart';
 import 'scanner_screen.dart';
 import 'viewer_screen.dart' show PdfViewerScreen;
 import 'text_editor_screen.dart';
+import 'editor_screen.dart';
 import 'settings_screen.dart';
+import '../services/permission_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -81,6 +83,13 @@ class _HomeScreenState extends State<HomeScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => TextEditorScreen(document: doc)),
+    ).then((_) => _loadDocuments());
+  }
+
+  void _openPdfEditor(ScannedDocument doc) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => EditorScreen(document: doc)),
     ).then((_) => _loadDocuments());
   }
 
@@ -246,6 +255,17 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Picks one or more images from the gallery and converts them to PDF.
   Future<void> _importImages() async {
+    final hasPermission = await PermissionService().requestStoragePermission();
+    if (!hasPermission) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Storage permission is required to import images.'),
+        ),
+      );
+      return;
+    }
+
     setState(() => _isImporting = true);
     try {
       final result = await FilePicker.platform.pickFiles(
@@ -307,6 +327,17 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Picks a PDF file and saves it to app storage.
   Future<void> _importPdf() async {
+    final hasPermission = await PermissionService().requestStoragePermission();
+    if (!hasPermission) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Storage permission is required to import PDFs.'),
+        ),
+      );
+      return;
+    }
+
     setState(() => _isImporting = true);
     try {
       final result = await FilePicker.platform.pickFiles(
@@ -355,6 +386,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: false,
         title: _isSearching
             ? TextField(
                 controller: _searchController,
@@ -367,9 +399,29 @@ class _HomeScreenState extends State<HomeScreen> {
                 style: const TextStyle(color: Colors.white, fontSize: 18),
                 onChanged: _filterDocuments,
               )
-            : const Text(
-                'My Documents',
-                style: TextStyle(fontWeight: FontWeight.bold),
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Image.asset(
+                    'assets/images/app_logo.png',
+                    height: 32,
+                    errorBuilder: (context, error, stackTrace) => const Icon(
+                      Icons.description_rounded,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Flexible(
+                    child: Text(
+                      'PDF Scanner',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.5,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
               ),
         backgroundColor: Colors.indigo,
         foregroundColor: Colors.white,
@@ -416,15 +468,21 @@ class _HomeScreenState extends State<HomeScreen> {
               : _filteredDocuments.isEmpty
               ? _buildEmptyState()
               : ListView.builder(
+                  physics: const BouncingScrollPhysics(
+                    parent: AlwaysScrollableScrollPhysics(),
+                  ),
                   padding: const EdgeInsets.only(top: 8, bottom: 80),
+                  cacheExtent: 500,
                   itemCount: _filteredDocuments.length,
                   itemBuilder: (context, index) {
                     final doc = _filteredDocuments[index];
                     return DocumentCard(
+                      key: ValueKey(doc.id),
                       doc: doc,
                       onTap: () => _openDocument(doc),
                       onShare: () => _shareDocument(doc),
-                      onEditAsText: () => _openTextEditor(doc),
+                      onExtractText: () => _openTextEditor(doc),
+                      onEditPdf: () => _openPdfEditor(doc),
                       onRename: () => _renameDocument(doc),
                       onDelete: () => _deleteDocument(doc),
                     );
