@@ -17,6 +17,10 @@ import 'text_editor_screen.dart';
 import 'editor_screen.dart';
 import 'settings_screen.dart';
 import '../services/permission_service.dart';
+import '../services/identity_service.dart';
+import '../services/api_service.dart';
+import '../services/security_service.dart';
+import 'paywall_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -136,11 +140,65 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _navigateToScanner() async {
     Navigator.pop(context); // close bottom sheet if open
+
+    // Usage Tracking Check with Anti-Tamper Tokens
+    final identity = context.read<IdentityService>();
+    final api = context.read<ApiService>();
+    final security = context.read<SecurityService>();
+    
+    final deviceId = await identity.getDeviceId();
+    if (!mounted) return;
+    
+    // Security Step 1: Get short-lived feature token & integrity signals
+    final featureToken = await api.getFeatureToken(deviceId, 'scan_document');
+    final integrityToken = await security.getIntegrityToken();
+    
+    // Security Step 2: Request access
+    final trackResult = await api.trackUsage(
+      deviceId: deviceId, 
+      featureName: 'scan_document',
+      featureToken: featureToken,
+      integrityToken: integrityToken,
+    );
+    
+    if (!mounted) return;
+    
+    if (trackResult != null && trackResult.containsKey('error')) {
+      _showLimitReachedDialog(trackResult['message'] ?? "Usage limit reached.");
+      return;
+    }
+
     await Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => const ScannerScreen()),
     );
     _loadDocuments();
+  }
+
+  void _showLimitReachedDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Limit Reached'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const PaywallScreen()),
+              );
+            },
+            child: const Text('Go Premium'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _openDocument(ScannedDocument doc) {
@@ -327,13 +385,41 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Picks one or more images from the gallery and converts them to PDF.
   Future<void> _importImages() async {
     final hasPermission = await PermissionService().requestStoragePermission();
+    if (!mounted) return;
+    
     if (!hasPermission) {
-      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Storage permission is required to import images.'),
         ),
       );
+      return;
+    }
+
+    // Usage Tracking Check with Anti-Tamper Tokens
+    final identity = context.read<IdentityService>();
+    final api = context.read<ApiService>();
+    final security = context.read<SecurityService>();
+    
+    final deviceId = await identity.getDeviceId();
+    if (!mounted) return;
+    
+    // Security Step 1: Get short-lived feature token
+    final featureToken = await api.getFeatureToken(deviceId, 'import_image');
+    final integrityToken = await security.getIntegrityToken();
+    
+    // Security Step 2: Request access
+    final trackResult = await api.trackUsage(
+      deviceId: deviceId, 
+      featureName: 'import_image',
+      featureToken: featureToken,
+      integrityToken: integrityToken,
+    );
+    
+    if (!mounted) return;
+    
+    if (trackResult != null && trackResult.containsKey('error')) {
+      _showLimitReachedDialog(trackResult['message'] ?? "Usage limit reached.");
       return;
     }
 
@@ -399,13 +485,41 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Picks a PDF file and saves it to app storage.
   Future<void> _importPdf() async {
     final hasPermission = await PermissionService().requestStoragePermission();
+    if (!mounted) return;
+
     if (!hasPermission) {
-      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Storage permission is required to import PDFs.'),
         ),
       );
+      return;
+    }
+
+    // Usage Tracking Check with Anti-Tamper Tokens
+    final identity = context.read<IdentityService>();
+    final api = context.read<ApiService>();
+    final security = context.read<SecurityService>();
+    
+    final deviceId = await identity.getDeviceId();
+    if (!mounted) return;
+    
+    // Security Step 1: Get short-lived feature token
+    final featureToken = await api.getFeatureToken(deviceId, 'import_pdf');
+    final integrityToken = await security.getIntegrityToken();
+    
+    // Security Step 2: Request access
+    final trackResult = await api.trackUsage(
+      deviceId: deviceId, 
+      featureName: 'import_pdf', 
+      featureToken: featureToken,
+      integrityToken: integrityToken,
+    );
+    
+    if (!mounted) return;
+    
+    if (trackResult != null && trackResult.containsKey('error')) {
+      _showLimitReachedDialog(trackResult['message'] ?? "Usage limit reached.");
       return;
     }
 

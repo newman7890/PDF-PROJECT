@@ -40,7 +40,14 @@ class MainActivity : FlutterActivity() {
 
         val uri: Uri? = when (intent.action) {
             Intent.ACTION_VIEW, Intent.ACTION_EDIT -> intent.data
-            Intent.ACTION_SEND -> intent.getParcelableExtra(Intent.EXTRA_STREAM)
+            Intent.ACTION_SEND -> {
+                if (android.os.Build.VERSION.SDK_INT >= 33) {
+                    intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableExtra(Intent.EXTRA_STREAM)
+                }
+            }
             else -> null
         }
 

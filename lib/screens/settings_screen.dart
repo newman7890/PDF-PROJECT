@@ -4,6 +4,8 @@ import 'package:share_plus/share_plus.dart';
 import '../services/storage_service.dart';
 import 'privacy_policy_screen.dart';
 import 'onboarding_screen.dart';
+import 'paywall_screen.dart';
+import '../services/api_service.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -25,6 +27,8 @@ class SettingsScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          _buildSubscriptionSection(context),
+          const SizedBox(height: 16),
           _buildCardSection(context, 'Support & Feedback', [
             ListTile(
               leading: Container(
@@ -267,6 +271,88 @@ class SettingsScreen extends StatelessWidget {
           letterSpacing: 1.2,
         ),
       ),
+    );
+  }
+
+  Widget _buildSubscriptionSection(BuildContext context) {
+    final theme = Theme.of(context);
+    final api = context.read<ApiService>();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionHeader(context, 'Subscription'),
+        FutureBuilder<int>(
+          future: api.getGlobalTrialUsage(),
+          builder: (context, snapshot) {
+            final int count = snapshot.data ?? 0;
+            final int remaining = 3 - count > 0 ? 3 - count : 0;
+            final bool isLocked = count >= 3;
+
+            return Card(
+              elevation: 0,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: BorderSide(
+                  color: isLocked ? Colors.red.withAlpha(50) : theme.colorScheme.primary.withAlpha(50),
+                  width: 1.5,
+                ),
+              ),
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      (isLocked ? Colors.red : theme.colorScheme.primary).withAlpha(20),
+                      (isLocked ? Colors.red : theme.colorScheme.primary).withAlpha(5),
+                    ],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Column(
+                  children: [
+                    ListTile(
+                      leading: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: isLocked ? Colors.red : Colors.amber,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(isLocked ? Icons.lock : Icons.star, color: Colors.white),
+                      ),
+                      title: Text(
+                        isLocked ? 'Account Locked' : 'Account Status',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      subtitle: Text(isLocked ? 'Trial Expired' : 'Free Trial ($remaining uses left)'),
+                      trailing: TextButton(
+                        onPressed: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (context) => const PaywallScreen()),
+                          );
+                        },
+                        child: Text(isLocked ? 'LOCK REMOVAL' : 'UPGRADE'),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: Text(
+                        isLocked
+                            ? 'Your free trial has ended. Please subscribe to unlock all features.'
+                            : 'Unlock unlimited PDF scans, high-resolution text extraction, and advanced editing tools.',
+                        style: const TextStyle(fontSize: 12, color: Colors.black87),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ],
     );
   }
 

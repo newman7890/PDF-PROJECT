@@ -262,6 +262,9 @@ class PDFService {
     String title = 'Edited Document',
     List<Offset>? signaturePoints,
   }) async {
+    // Sanitize text to remove unsupported Unicode characters
+    final String sanitizedText = sanitizeForPdf(text);
+
     final PdfDocument document = PdfDocument();
 
     const double margin = 40.0;
@@ -272,7 +275,7 @@ class PDFService {
     final double pageHeight = page.getClientSize().height;
 
     // Parse the entire text into styled chunks
-    final List<StyledChunk> chunks = _parseStyledLine(text);
+    final List<StyledChunk> chunks = _parseStyledLine(sanitizedText);
 
     double x = margin;
     double maxLineHeight = 18.0;
@@ -815,6 +818,167 @@ class PDFService {
     }
 
     return chunks;
+  }
+
+  String sanitizeForPdf(String text) {
+    if (text.isEmpty) return text;
+
+    // Map common extended Unicode characters to ASCII equivalents
+    // This covers characters likely to be used in names/text that are not in Latin-1
+    final Map<String, String> replacements = {
+      'đ': 'd',
+      'Đ': 'D',
+      'ă': 'a',
+      'Ă': 'A',
+      'â': 'a',
+      'Â': 'A',
+      'á': 'a',
+      'Á': 'A',
+      'à': 'a',
+      'À': 'A',
+      'ả': 'a',
+      'Ả': 'A',
+      'ã': 'a',
+      'Ã': 'A',
+      'ạ': 'a',
+      'Ạ': 'A',
+      'ấ': 'a',
+      'Ấ': 'A',
+      'ầ': 'a',
+      'Ầ': 'A',
+      'ẩ': 'a',
+      'Ẩ': 'A',
+      'ẫ': 'a',
+      'Ẫ': 'A',
+      'ậ': 'a',
+      'Ậ': 'A',
+      'ắ': 'a',
+      'Ắ': 'A',
+      'ằ': 'a',
+      'Ằ': 'A',
+      'ẳ': 'a',
+      'Ẳ': 'A',
+      'ẵ': 'a',
+      'Ẵ': 'A',
+      'ặ': 'a',
+      'Ặ': 'A',
+      'é': 'e',
+      'É': 'E',
+      'è': 'e',
+      'È': 'E',
+      'ẻ': 'e',
+      'Ẻ': 'E',
+      'ẽ': 'e',
+      'Ẽ': 'E',
+      'ẹ': 'e',
+      'Ẹ': 'E',
+      'ê': 'e',
+      'Ê': 'E',
+      'ế': 'e',
+      'Ế': 'E',
+      'ề': 'e',
+      'Ề': 'E',
+      'ể': 'e',
+      'Ể': 'E',
+      'ễ': 'e',
+      'Ễ': 'E',
+      'ệ': 'e',
+      'Ệ': 'E',
+      'í': 'i',
+      'Í': 'I',
+      'ì': 'i',
+      'Ì': 'I',
+      'ỉ': 'i',
+      'Ỉ': 'I',
+      'ĩ': 'i',
+      'Ĩ': 'I',
+      'ị': 'i',
+      'Ị': 'I',
+      'ó': 'o',
+      'Ó': 'O',
+      'ò': 'o',
+      'Ò': 'O',
+      'ỏ': 'o',
+      'Ỏ': 'O',
+      'õ': 'o',
+      'Õ': 'O',
+      'ọ': 'o',
+      'Ọ': 'O',
+      'ô': 'o',
+      'Ô': 'O',
+      'ố': 'o',
+      'Ố': 'O',
+      'ồ': 'o',
+      'Ồ': 'O',
+      'ổ': 'o',
+      'Ổ': 'O',
+      'ỗ': 'o',
+      'Ỗ': 'O',
+      'ộ': 'o',
+      'Ộ': 'O',
+      'ơ': 'o',
+      'Ơ': 'O',
+      'ớ': 'o',
+      'Ớ': 'O',
+      'ờ': 'o',
+      'Ờ': 'O',
+      'ở': 'o',
+      'Ở': 'O',
+      'ỡ': 'o',
+      'Ỡ': 'O',
+      'ợ': 'o',
+      'Ợ': 'O',
+      'ú': 'u',
+      'Ú': 'U',
+      'ù': 'u',
+      'Ù': 'U',
+      'ủ': 'u',
+      'Ủ': 'U',
+      'ũ': 'u',
+      'Ũ': 'U',
+      'ụ': 'u',
+      'Ụ': 'U',
+      'ư': 'u',
+      'Ư': 'U',
+      'ứ': 'u',
+      'Ứ': 'U',
+      'ừ': 'u',
+      'Ừ': 'U',
+      'ử': 'u',
+      'Ử': 'U',
+      'ữ': 'u',
+      'Ữ': 'U',
+      'ự': 'u',
+      'Ự': 'U',
+      'ý': 'y',
+      'Ý': 'Y',
+      'ỳ': 'y',
+      'Ỳ': 'Y',
+      'ỷ': 'y',
+      'Ỷ': 'Y',
+      'ỹ': 'y',
+      'Ỹ': 'Y',
+      'ỵ': 'y',
+      'Ỵ': 'Y',
+    };
+
+    String result = text;
+    replacements.forEach((key, value) {
+      result = result.replaceAll(key, value);
+    });
+
+    // Final safety pass for any character > 255 (PDF standard font limit)
+    final StringBuffer buffer = StringBuffer();
+    for (int i = 0; i < result.length; i++) {
+      int charCode = result.codeUnitAt(i);
+      if (charCode > 255) {
+        buffer.write('?');
+      } else {
+        buffer.write(result[i]);
+      }
+    }
+
+    return buffer.toString();
   }
 
   String _cleanFormatting(String text) {
